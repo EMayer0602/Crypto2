@@ -5,7 +5,6 @@ A simple but functional cryptocurrency trading implementation.
 """
 
 import json
-import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from enum import Enum

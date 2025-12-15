@@ -250,14 +250,20 @@ class TestCryptoTrader(unittest.TestCase):
         self.trader.buy("BTC", 0.1)
         self.trader.sell("BTC", 0.05)
         
-        filename = "/tmp/test_trade_history.json"
-        self.trader.export_trade_history(filename)
+        import tempfile
+        import os
         
-        self.assertTrue(os.path.exists(filename))
+        # Use temporary directory for cross-platform compatibility
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            filename = f.name
         
-        # Clean up
-        if os.path.exists(filename):
-            os.remove(filename)
+        try:
+            self.trader.export_trade_history(filename)
+            self.assertTrue(os.path.exists(filename))
+        finally:
+            # Clean up
+            if os.path.exists(filename):
+                os.remove(filename)
     
     def test_price_changes_affect_portfolio_value(self):
         """Test that price changes affect portfolio value"""
