@@ -1,0 +1,26 @@
+{
+  "total_capital": 13764.753620227822,
+  "positions": [],
+  "last_processed_bar": {
+    "TNSR/USDC|jma|12h|long": "2025-12-15T19:00:00+01:00",
+    "LUNC/USDT|jma|4h|long": "2025-12-15T19:00:00+01:00",
+    "ZEC/USDC|jma|12h|long": "2025-12-15T19:00:00+01:00",
+    "SUI/EUR|jma|6h|long": "2025-12-15T19:00:00+01:00",
+    "SOL/EUR|jma|8h|long": "2025-12-15T19:00:00+01:00",
+    "ETH/EUR|jma|6h|long": "2025-12-15T19:00:00+01:00",
+    "LINK/EUR|jma|4h|long": "2025-12-15T19:00:00+01:00",
+    "BTC/EUR|jma|6h|long": "2025-12-15T19:00:00+01:00",
+    "XRP/EUR|jma|6h|long": "2025-12-15T19:00:00+01:00"
+  },
+  "symbol_trade_counts": {
+    "BTC/EUR": 3,
+    "ETH/EUR": 2,
+    "XRP/EUR": 2,
+    "LINK/EUR": 3,
+    "LUNC/USDT": 2,
+    "SOL/EUR": 2,
+    "SUI/EUR": 3,
+    "TNSR/USDC": 2,
+    "ZEC/USDC": 1
+  }
+}
