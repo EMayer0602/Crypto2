@@ -1,0 +1,7 @@
+# Cryptocurrency Trading System Requirements
+# No external dependencies required for basic functionality
+# All functionality uses Python standard library
+
+# Optional: For enhanced features (not required)
+# requests>=2.31.0  # For real-time price fetching from APIs
+# pytest>=7.4.0     # For running tests
