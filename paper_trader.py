@@ -47,7 +47,7 @@ STAKE_DIVISOR = 7 # stake = current total_capital / STAKE_DIVISOR
 DEFAULT_DIRECTION_CAPITAL = 2_800.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
-DEFAULT_FIXED_STAKE = None  # Use dynamic sizing unless explicitly overridden
+DEFAULT_FIXED_STAKE = 2000.0  # Fixed stake per trade
 DEFAULT_ALLOWED_DIRECTIONS = ["long"]
 DEFAULT_USE_TESTNET = True
 SIGNAL_DEBUG = False
@@ -55,7 +55,7 @@ DEFAULT_SIGNAL_INTERVAL_MIN = 15
 DEFAULT_SPIKE_INTERVAL_MIN = 5
 DEFAULT_ATR_SPIKE_MULT = 2.5
 DEFAULT_POLL_SECONDS = 30
-TESTNET_DEFAULT_STAKE = 1000.0
+TESTNET_DEFAULT_STAKE = 2000.0
 
 
 def set_max_open_positions(value: int) -> None:
@@ -1382,32 +1382,72 @@ def generate_summary_html(
     html_parts = [
         "<html><head><meta charset='utf-8'>",
         "<title>Paper Trading Simulation Summary</title>",
-        "<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:4px 8px;text-align:right;}th{text-align:center;background:#f0f0f0;}h1,h2{margin-bottom:0;}</style>",
+        "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;margin-top:12px;width:auto;}th,td{border:1px solid #ccc;padding:6px 10px;text-align:right;}th{text-align:center;background:#f0f0f0;font-weight:bold;}td:first-child{text-align:left;}h1{margin-bottom:10px;}h2{margin-top:30px;margin-bottom:10px;}</style>",
         "</head><body>",
         f"<h1>Simulation Summary {summary['start']} → {summary['end']}</h1>",
         "<table>",
         "<tr><th>Metric</th><th>Value</th></tr>",
-        f"<tr><td style='text-align:left'>Closed trades</td><td>{summary['closed_trades']}</td></tr>",
-        f"<tr><td style='text-align:left'>Open positions</td><td>{summary['open_positions']}</td></tr>",
-        f"<tr><td style='text-align:left'>Closed PnL (USDT)</td><td>{summary['closed_pnl']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Avg trade PnL (USDT)</td><td>{summary['avg_trade_pnl']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Win rate (%)</td><td>{summary['win_rate_pct']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Winners</td><td>{summary['winners']}</td></tr>",
-        f"<tr><td style='text-align:left'>Losers</td><td>{summary['losers']}</td></tr>",
-        f"<tr><td style='text-align:left'>Open equity (net)</td><td>{summary['open_equity']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Final capital (USDT)</td><td>{summary['final_capital']:.2f}</td></tr>",
+        f"<tr><td>Closed trades</td><td>{summary['closed_trades']}</td></tr>",
+        f"<tr><td>Open positions</td><td>{summary['open_positions']}</td></tr>",
+        f"<tr><td>Closed PnL (USDT)</td><td>{summary['closed_pnl']:.2f}</td></tr>",
+        f"<tr><td>Avg trade PnL (USDT)</td><td>{summary['avg_trade_pnl']:.2f}</td></tr>",
+        f"<tr><td>Win rate (%)</td><td>{summary['win_rate_pct']:.2f}</td></tr>",
+        f"<tr><td>Winners</td><td>{summary['winners']}</td></tr>",
+        f"<tr><td>Losers</td><td>{summary['losers']}</td></tr>",
+        f"<tr><td>Open equity (net)</td><td>{summary['open_equity']:.2f}</td></tr>",
+        f"<tr><td>Final capital (USDT)</td><td>{summary['final_capital']:.2f}</td></tr>",
         "</table>",
     ]
+
     if not trades_df.empty:
         html_parts.append("<h2>Complete Closed Trades (with Entry and Exit)</h2>")
         full_cols = [c for c in [
             "symbol","direction","indicator","htf","entry_time","entry_price","exit_time","exit_price","stake","pnl","reason"
         ] if c in trades_df.columns]
-        html_parts.append(trades_df[full_cols].to_html(index=False, float_format="{:.8f}".format))
+
+        # Format specific columns with appropriate precision
+        trades_display = trades_df[full_cols].copy()
+        for col in ["entry_price", "exit_price"]:
+            if col in trades_display.columns:
+                trades_display[col] = trades_display[col].apply(lambda x: f"{x:.8f}" if pd.notna(x) else "")
+        for col in ["stake", "pnl"]:
+            if col in trades_display.columns:
+                trades_display[col] = trades_display[col].apply(lambda x: f"{x:.8f}" if pd.notna(x) else "")
+
+        html_parts.append(trades_display.to_html(index=False, escape=False))
+
     if not open_positions_df.empty:
         html_parts.append("<h2>Open positions</h2>")
-        html_parts.append(open_positions_df.to_html(index=False, float_format="{:.8f}".format))
+
+        # Format specific columns with appropriate precision
+        open_display = open_positions_df.copy()
+
+        # 8 decimal places for prices and amounts
+        for col in ["entry_price", "stake", "last_price", "unrealized_pnl"]:
+            if col in open_display.columns:
+                open_display[col] = open_display[col].apply(lambda x: f"{x:.8f}" if pd.notna(x) else "")
+
+        # 2 decimal places for percentages
+        if "unrealized_pct" in open_display.columns:
+            open_display["unrealized_pct"] = open_display["unrealized_pct"].apply(lambda x: f"{x:.8f}" if pd.notna(x) else "")
+
+        # 2 decimal places for float params, integers for counts
+        for col in ["param_a", "param_b"]:
+            if col in open_display.columns:
+                open_display[col] = open_display[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
+
+        if "atr_mult" in open_display.columns:
+            open_display["atr_mult"] = open_display["atr_mult"].apply(lambda x: f"{x:.2f}" if pd.notna(x) and x is not None else "None")
+
+        for col in ["min_hold_bars", "bars_held"]:
+            if col in open_display.columns:
+                open_display[col] = open_display[col].apply(lambda x: f"{int(x)}" if pd.notna(x) else "0")
+
+        html_parts.append(open_display.to_html(index=False, escape=False))
+
     html_parts.append("</body></html>")
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("".join(html_parts))
     print(f"[Simulation] Summary HTML saved to {path}")
@@ -1722,7 +1762,6 @@ def write_live_reports(final_state: Dict, closed_trades: List[TradeResult]) -> N
         print(f"[Live] Snapshot updated with no new trades this cycle. Total history: {len(all_trades_df)} trades.")
     else:
         print(f"[Live] Snapshot includes {len(current_trades_df)} new trade(s). Total history: {len(all_trades_df)} trades.")
-    return float(summary.get("final_capital", final_state.get("total_capital", 0.0)))
     return float(summary.get("final_capital", final_state.get("total_capital", 0.0)))
 
 

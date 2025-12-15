@@ -775,6 +775,92 @@ def prepare_symbol_dataframe(symbol):
 	return df
 
 
+def calculate_dynamic_min_hold_days(
+	symbol: str,
+	recent_trades_df: pd.DataFrame = None,
+	lookback_days: int = 30,
+	min_days: int = 0,
+	max_days: int = 7
+) -> int:
+	"""
+	Calculate optimal minimum hold days dynamically based on recent performance and volatility.
+
+	Strategy:
+	- High volatility -> shorter hold times (let profits run, cut losses quickly)
+	- Low volatility -> longer hold times (avoid whipsaws)
+	- Recent losses -> increase hold time slightly (avoid overtrading)
+	- Recent wins -> maintain or reduce hold time
+
+	Args:
+		symbol: Trading symbol
+		recent_trades_df: DataFrame of recent trades (optional)
+		lookback_days: How many days to look back for volatility
+		min_days: Minimum hold days allowed
+		max_days: Maximum hold days allowed
+
+	Returns:
+		Optimal minimum hold days (integer)
+	"""
+	try:
+		# Fetch recent data for volatility calculation
+		lookback_bars = max(100, lookback_days * BARS_PER_DAY)
+		df = fetch_data(symbol, TIMEFRAME, lookback_bars)
+
+		if df.empty or len(df) < 20:
+			return min_days
+
+		# Calculate ATR-based volatility score
+		atr_series = AverageTrueRange(df["high"], df["low"], df["close"], window=ATR_WINDOW).average_true_range()
+		recent_atr = float(atr_series.iloc[-1]) if not atr_series.empty else 0.0
+		avg_atr = float(atr_series.mean()) if not atr_series.empty else 0.0
+		avg_price = float(df["close"].mean())
+
+		if avg_price == 0 or avg_atr == 0:
+			return min_days
+
+		# Volatility ratio: higher means more volatile
+		volatility_ratio = recent_atr / avg_atr if avg_atr > 0 else 1.0
+		atr_pct = (avg_atr / avg_price) * 100  # ATR as % of price
+
+		# Base calculation: Higher volatility -> lower hold days
+		# ATR% ranges typically: 1-3% low vol, 3-7% medium vol, 7%+ high vol
+		if atr_pct < 2.0:  # Very low volatility
+			base_hold = max_days
+		elif atr_pct < 4.0:  # Low-medium volatility
+			base_hold = (min_days + max_days) // 2 + 1
+		elif atr_pct < 7.0:  # Medium-high volatility
+			base_hold = (min_days + max_days) // 2
+		else:  # High volatility
+			base_hold = min_days
+
+		# Adjust based on recent volatility spike
+		if volatility_ratio > 1.5:  # Volatility spike
+			base_hold = max(min_days, base_hold - 1)
+		elif volatility_ratio < 0.7:  # Volatility drop
+			base_hold = min(max_days, base_hold + 1)
+
+		# Adjust based on recent trade performance (if provided)
+		if recent_trades_df is not None and not recent_trades_df.empty:
+			# Look at last 10 trades
+			recent = recent_trades_df.tail(10)
+			if len(recent) >= 3:
+				win_rate = len(recent[recent["pnl"] > 0]) / len(recent)
+				avg_pnl = recent["pnl"].mean()
+
+				# If losing streak, increase hold time to avoid overtrading
+				if win_rate < 0.3:
+					base_hold = min(max_days, base_hold + 1)
+				# If winning streak with good profits, maintain or reduce
+				elif win_rate > 0.6 and avg_pnl > 0:
+					base_hold = max(min_days, base_hold)
+
+		return int(np.clip(base_hold, min_days, max_days))
+
+	except Exception as exc:
+		print(f"[DynamicHold] Error calculating for {symbol}: {exc}")
+		return min_days
+
+
 def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=0, min_hold_days=None):
 	direction = direction.lower()
 	if direction not in {"long", "short"}:
