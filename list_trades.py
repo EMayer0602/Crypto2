@@ -99,11 +99,14 @@ def list_recent_trades(days=7, max_trades=50):
 
     # Convert timestamps
     if "exit_time" in df.columns:
-        df["exit_time"] = pd.to_datetime(df["exit_time"], errors="coerce")
+        df["exit_time"] = pd.to_datetime(df["exit_time"], errors="coerce", utc=True)
         df = df.dropna(subset=["exit_time"])
 
         # Filter by date
         cutoff = pd.Timestamp.now(timezone.utc) - pd.Timedelta(days=days)
+        # Ensure both sides are timezone-aware
+        if df["exit_time"].dt.tz is None:
+            df["exit_time"] = df["exit_time"].dt.tz_localize("UTC")
         recent = df[df["exit_time"] >= cutoff].tail(max_trades)
 
         if recent.empty:
@@ -200,10 +203,13 @@ def filter_trades_from_date(start_date="2025-12-09"):
         return
 
     if "entry_time" in df.columns:
-        df["entry_time"] = pd.to_datetime(df["entry_time"], errors="coerce")
+        df["entry_time"] = pd.to_datetime(df["entry_time"], errors="coerce", utc=True)
         df = df.dropna(subset=["entry_time"])
 
-        cutoff = pd.to_datetime(start_date)
+        cutoff = pd.to_datetime(start_date, utc=True)
+        # Ensure both sides are timezone-aware
+        if df["entry_time"].dt.tz is None:
+            df["entry_time"] = df["entry_time"].dt.tz_localize("UTC")
         filtered = df[df["entry_time"] >= cutoff]
 
         if filtered.empty:
