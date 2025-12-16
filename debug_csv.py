@@ -11,11 +11,11 @@ files_to_check = [
 for file_path in files_to_check:
     if not os.path.exists(file_path):
         print(f"\n{'='*60}")
-        print(f"❌ FILE NOT FOUND: {file_path}")
+        print(f"[X] FILE NOT FOUND: {file_path}")
         continue
 
     print(f"\n{'='*60}")
-    print(f"📄 FILE: {file_path}")
+    print(f"FILE: {file_path}")
     print(f"{'='*60}")
 
     # Read CSV
@@ -25,7 +25,7 @@ for file_path in files_to_check:
     print(f"Columns: {list(df.columns)}")
 
     if df.empty:
-        print("⚠️  DataFrame is EMPTY")
+        print("WARNING: DataFrame is EMPTY")
         continue
 
     # Check data types
@@ -58,4 +58,4 @@ for file_path in files_to_check:
             print(f"  {col}: {formatted_series.iloc[0]}")
 
 print(f"\n{'='*60}")
-print("✓ Debug complete")
+print("[OK] Debug complete")
