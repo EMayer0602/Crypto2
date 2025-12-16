@@ -1409,9 +1409,13 @@ def generate_summary_html(
         trades_display = trades_df[full_cols].copy()
         for col in ["entry_price", "exit_price"]:
             if col in trades_display.columns:
+                # Convert to float first to handle both float and string inputs
+                trades_display[col] = pd.to_numeric(trades_display[col], errors="coerce")
                 trades_display[col] = trades_display[col].apply(lambda x: f"{x:.8f}" if pd.notna(x) else "")
         for col in ["stake", "pnl"]:
             if col in trades_display.columns:
+                # Convert to float first to handle both float and string inputs
+                trades_display[col] = pd.to_numeric(trades_display[col], errors="coerce")
                 trades_display[col] = trades_display[col].apply(lambda x: f"{x:.8f}" if pd.notna(x) else "")
 
         html_parts.append(trades_display.to_html(index=False, escape=False))
@@ -1425,22 +1429,28 @@ def generate_summary_html(
         # 8 decimal places for prices and amounts
         for col in ["entry_price", "stake", "last_price", "unrealized_pnl"]:
             if col in open_display.columns:
+                # Convert to float first to handle both float and string inputs
+                open_display[col] = pd.to_numeric(open_display[col], errors="coerce")
                 open_display[col] = open_display[col].apply(lambda x: f"{x:.8f}" if pd.notna(x) else "")
 
         # 2 decimal places for percentages
         if "unrealized_pct" in open_display.columns:
+            open_display["unrealized_pct"] = pd.to_numeric(open_display["unrealized_pct"], errors="coerce")
             open_display["unrealized_pct"] = open_display["unrealized_pct"].apply(lambda x: f"{x:.8f}" if pd.notna(x) else "")
 
         # 2 decimal places for float params, integers for counts
         for col in ["param_a", "param_b"]:
             if col in open_display.columns:
+                open_display[col] = pd.to_numeric(open_display[col], errors="coerce")
                 open_display[col] = open_display[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
 
         if "atr_mult" in open_display.columns:
-            open_display["atr_mult"] = open_display["atr_mult"].apply(lambda x: f"{x:.2f}" if pd.notna(x) and x is not None else "None")
+            open_display["atr_mult"] = pd.to_numeric(open_display["atr_mult"], errors="coerce")
+            open_display["atr_mult"] = open_display["atr_mult"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "None")
 
         for col in ["min_hold_bars", "bars_held"]:
             if col in open_display.columns:
+                open_display[col] = pd.to_numeric(open_display[col], errors="coerce")
                 open_display[col] = open_display[col].apply(lambda x: f"{int(x)}" if pd.notna(x) else "0")
 
         html_parts.append(open_display.to_html(index=False, escape=False))
