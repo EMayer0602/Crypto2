@@ -1,0 +1,39 @@
+# Runtime data - should not be committed
+paper_trading_actual_trades.csv
+paper_trading_actual_trades.json
+paper_trading_simulation_log.json
+paper_trading_state.json
+merge_history.json
+
+# HTML Reports
+report_html/
+*.html
+
+# Chart images
+*.png
+chart_*.png
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
