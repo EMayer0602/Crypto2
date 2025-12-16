@@ -1474,7 +1474,19 @@ def generate_summary_html(
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("".join(html_parts))
+
+    # Debug: Show caller and data info
+    import traceback
+    caller_info = traceback.extract_stack()[-2]
     print(f"[Simulation] Summary HTML saved to {path}")
+    print(f"[DEBUG] Called from {caller_info.filename}:{caller_info.lineno} in {caller_info.name}()")
+    print(f"[DEBUG] Trades: {len(trades_df)} rows, Open positions: {len(open_positions_df)} rows")
+    if not trades_df.empty:
+        sample_cols = ["entry_price", "exit_price", "stake", "pnl"]
+        for col in sample_cols:
+            if col in trades_df.columns:
+                first_val = trades_df[col].iloc[0] if len(trades_df) > 0 else None
+                print(f"[DEBUG] First {col}: {first_val} (type: {type(first_val).__name__})")
 
 
 def write_summary_json(summary: Dict[str, Any], path: str) -> None:
