@@ -1816,9 +1816,26 @@ def write_live_reports(final_state: Dict, closed_trades: List[TradeResult]) -> N
         all_trades_df = current_trades_df
     
     # Use ALL historical trades for summary and charts
+    # Load existing open positions from CSV (similar to how we load historical trades)
+    existing_open_df = pd.DataFrame()
+    if os.path.exists(SIMULATION_OPEN_POSITIONS_FILE):
+        try:
+            existing_open_df = pd.read_csv(SIMULATION_OPEN_POSITIONS_FILE)
+        except Exception:
+            pass
+
+    # Get new open positions from current state
     open_positions = final_state.get("positions", [])
-    write_open_positions_report(open_positions, SIMULATION_OPEN_POSITIONS_FILE, SIMULATION_OPEN_POSITIONS_JSON)
-    open_df = open_positions_to_dataframe(open_positions)
+
+    # If no new open positions and we have existing ones, use the existing ones
+    if not open_positions and not existing_open_df.empty:
+        print(f"[Live] No new open positions, keeping {len(existing_open_df)} existing positions.")
+        open_df = existing_open_df
+    else:
+        # Write new open positions (will overwrite if empty, which is correct if positions closed)
+        write_open_positions_report(open_positions, SIMULATION_OPEN_POSITIONS_FILE, SIMULATION_OPEN_POSITIONS_JSON)
+        open_df = open_positions_to_dataframe(open_positions)
+
     start_ts, end_ts = _derive_summary_window(all_trades_df)
     summary = build_summary_payload(all_trades_df, open_df, final_state, start_ts, end_ts)
     generate_summary_html(summary, all_trades_df, open_df, SIMULATION_SUMMARY_HTML)
