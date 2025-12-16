@@ -16,16 +16,18 @@ import ccxt
 import Supertrend_5Min as st
 
 
-def fetch_live_data(symbol, timeframe='5m', hours=24):
-    """Fetch live data from Binance"""
-    print(f"Fetching {hours}h of {timeframe} data for {symbol}...")
+def fetch_live_data(symbol, timeframe='5m', hours=24, warmup_hours=12):
+    """Fetch live data from Binance with warmup period for HTF indicator"""
+
+    total_hours = hours + warmup_hours
+    print(f"Fetching {total_hours}h of {timeframe} data for {symbol} ({warmup_hours}h warmup + {hours}h analysis)...")
 
     exchange = ccxt.binance({
         'enableRateLimit': True,
     })
 
-    # Calculate how many bars we need
-    since = exchange.parse8601((datetime.now() - timedelta(hours=hours)).isoformat())
+    # Calculate how many bars we need (with warmup)
+    since = exchange.parse8601((datetime.now() - timedelta(hours=total_hours)).isoformat())
 
     # Fetch OHLCV data
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=1000)
@@ -260,31 +262,52 @@ def main():
         else:
             i += 1
 
+    # Calculate required warmup based on HTF length
+    htf_length = length * htf_factor
+    # For 5m bars: warmup_bars = htf_length * 1.5 (to ensure full indicator convergence)
+    warmup_bars = int(htf_length * 1.5)
+    warmup_hours = int((warmup_bars * 5) / 60) + 1  # Convert bars to hours (5min each)
+
     print(f"\n{'='*80}")
     print(f"LIVE CHART ANALYSIS: {symbol}")
     print(f"{'='*80}")
     print(f"Timeframe: 5m")
-    print(f"Period: {hours} hours")
+    print(f"Analysis Period: {hours} hours")
+    print(f"Warmup Period: {warmup_hours} hours ({warmup_bars} bars)")
     print(f"Indicator: {indicator.upper()}")
-    print(f"Length: {length} (HTF: {length * htf_factor})")
+    print(f"Length: {length} (HTF: {htf_length})")
     if indicator == 'supertrend':
         print(f"Multiplier: {multiplier}")
     print(f"{'='*80}\n")
 
-    # Fetch data
-    df = fetch_live_data(symbol, '5m', hours)
+    # Fetch data with warmup
+    df_full = fetch_live_data(symbol, '5m', hours, warmup_hours)
 
-    # Calculate indicator
-    df = calculate_htf_indicator(df, indicator, length, multiplier, htf_factor)
+    # Calculate indicator on full dataset
+    df_full = calculate_htf_indicator(df_full, indicator, length, multiplier, htf_factor)
 
-    # Detect crossovers
-    signals = detect_crossovers(df)
+    # Split into warmup and analysis period
+    cutoff_time = df_full['timestamp'].iloc[-1] - timedelta(hours=hours)
+    warmup_idx = df_full[df_full['timestamp'] >= cutoff_time].index[0]
+
+    df_warmup = df_full.iloc[:warmup_idx]
+    df_analysis = df_full.iloc[warmup_idx:]
+
+    print(f"✓ Warmup period: {len(df_warmup)} bars")
+    print(f"✓ Analysis period: {len(df_analysis)} bars\n")
+
+    # Detect crossovers only in analysis period
+    signals = detect_crossovers(df_analysis)
+
+    # Adjust signal indices to match df_analysis
+    for signal in signals:
+        signal['index'] = signal['index']  # Already relative to df_analysis
 
     # Calculate trades
     calculate_trade_results(signals)
 
-    # Plot chart
-    plot_chart(df, signals, symbol, indicator)
+    # Plot chart (only analysis period)
+    plot_chart(df_analysis, signals, symbol, indicator)
 
 
 if __name__ == "__main__":
