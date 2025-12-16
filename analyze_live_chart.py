@@ -44,25 +44,22 @@ def calculate_htf_indicator(df, indicator_type='supertrend', length=10, multipli
 
     print(f"Calculating {indicator_type.upper()} with length={length}, multiplier={multiplier}, HTF factor={htf_factor}...")
 
-    # Calculate ATR first
-    df['atr'] = st.calculate_atr(df, length)
-
     # Calculate HTF length
     htf_length = int(length * htf_factor)
 
     if indicator_type.lower() == 'supertrend':
-        # Use regular length for Supertrend, but apply HTF via resampling concept
-        df['trend'], df['supertrend'] = st.calculate_supertrend(df, length, multiplier)
+        # Compute Supertrend with HTF length
+        df = st.compute_supertrend(df, htf_length, multiplier)
         df['htf_indicator'] = df['supertrend']
 
     elif indicator_type.lower() == 'jma':
-        # Calculate JMA with HTF length
-        df['jma'] = st.calculate_jma(df['close'], htf_length)
+        # Compute JMA with HTF length
+        df = st.compute_jma(df, htf_length)
         df['htf_indicator'] = df['jma']
 
     elif indicator_type.lower() == 'kama':
-        # Calculate KAMA with HTF length
-        df['kama'] = st.calculate_kama(df['close'], htf_length)
+        # Compute KAMA with HTF length
+        df = st.compute_kama(df, htf_length)
         df['htf_indicator'] = df['kama']
 
     else:
