@@ -240,9 +240,13 @@ def compare_single_trade(
         return None
 
 
-def run_batch_comparison():
+def run_batch_comparison(num_trades: int = 10, target_symbols: List[str] = None):
     """
     Compare both strategies on multiple recent trades.
+
+    Args:
+        num_trades: Number of recent trades to test (default: 10)
+        target_symbols: List of symbols to filter (default: all)
     """
     print("="*80)
     print("EXIT STRATEGY COMPARISON - OLD vs NEW")
@@ -270,10 +274,20 @@ def run_batch_comparison():
         return
 
     print(f"\nFound {len(trades_df)} trades in history")
-    print(f"Testing last 5 trades...\n")
 
-    # Take last 5 trades
-    recent_trades = trades_df.tail(5)
+    # Filter by symbols if specified
+    if target_symbols:
+        trades_df = trades_df[trades_df["symbol"].isin(target_symbols)]
+        print(f"Filtered to {len(trades_df)} trades for symbols: {', '.join(target_symbols)}")
+
+    if trades_df.empty:
+        print(f"\n[ERROR] No trades found for specified symbols")
+        return
+
+    print(f"Testing last {num_trades} trades...\n")
+
+    # Take last N trades
+    recent_trades = trades_df.tail(num_trades)
 
     results = []
 
@@ -311,7 +325,7 @@ def run_batch_comparison():
         print(f"\nTotal PnL Comparison:")
         print(f"  OLD Strategy: {old_total:.2f} USDT")
         print(f"  NEW Strategy: {new_total:.2f} USDT")
-        print(f"  Improvement: {improvement:+.2f} USDT ({(improvement/abs(old_total)*100):+.1f}%)")
+        print(f"  Improvement: {improvement:+.2f} USDT ({(improvement/abs(old_total)*100 if old_total != 0 else 0):+.1f}%)")
 
         old_avg = np.mean(old_pnls)
         new_avg = np.mean(new_pnls)
@@ -328,13 +342,56 @@ def run_batch_comparison():
         print(f"  OLD Strategy: {old_winners}/{len(old_pnls)} ({old_winners/len(old_pnls)*100:.1f}%)")
         print(f"  NEW Strategy: {new_winners}/{len(new_pnls)} ({new_winners/len(new_pnls)*100:.1f}%)")
 
+        # Per-symbol breakdown
+        symbols_tested = set(r["symbol"] for r in results)
+        if len(symbols_tested) > 1:
+            print(f"\n{'─'*80}")
+            print("PER-SYMBOL BREAKDOWN:")
+            print(f"{'─'*80}")
+
+            for symbol in sorted(symbols_tested):
+                symbol_results = [r for r in results if r["symbol"] == symbol]
+                symbol_old = [r["old_exit"]["pnl"] for r in symbol_results if r["old_exit"]]
+                symbol_new = [r["new_exit"]["pnl"] for r in symbol_results if r["new_exit"]]
+
+                if symbol_old and symbol_new:
+                    sym_improvement = sum(symbol_new) - sum(symbol_old)
+                    print(f"\n{symbol}:")
+                    print(f"  Trades: {len(symbol_results)}")
+                    print(f"  OLD: {sum(symbol_old):.2f} USDT")
+                    print(f"  NEW: {sum(symbol_new):.2f} USDT")
+                    print(f"  Diff: {sym_improvement:+.2f} USDT")
+
         if new_total > old_total:
-            print(f"\n✓✓✓ NEW STRATEGY WINS by {improvement:.2f} USDT! ✓✓✓")
+            print(f"\n{'='*80}")
+            print(f"✓✓✓ NEW STRATEGY WINS by {improvement:.2f} USDT! ✓✓✓")
+            print(f"{'='*80}")
         elif new_total < old_total:
-            print(f"\n✗✗✗ OLD STRATEGY BETTER by {abs(improvement):.2f} USDT")
+            print(f"\n{'='*80}")
+            print(f"✗✗✗ OLD STRATEGY BETTER by {abs(improvement):.2f} USDT")
+            print(f"{'='*80}")
         else:
             print(f"\n= STRATEGIES TIED")
 
+    return results
+
 
 if __name__ == "__main__":
-    run_batch_comparison()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Compare old vs new exit strategies")
+    parser.add_argument("--trades", type=int, default=10, help="Number of recent trades to test (default: 10)")
+    parser.add_argument("--symbols", type=str, default=None, help="Comma-separated symbols to test (e.g., BTC/EUR,ETH/EUR)")
+    parser.add_argument("--all", action="store_true", help="Test all available trades")
+
+    args = parser.parse_args()
+
+    # Parse symbols
+    target_symbols = None
+    if args.symbols:
+        target_symbols = [s.strip() for s in args.symbols.split(",")]
+
+    # Determine number of trades
+    num_trades = 999999 if args.all else args.trades
+
+    run_batch_comparison(num_trades=num_trades, target_symbols=target_symbols)
