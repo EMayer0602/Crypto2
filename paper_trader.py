@@ -608,34 +608,75 @@ def _load_trade_log_dataframe(log_path: str) -> pd.DataFrame:
 
     # Remove duplicate columns
     df = df.loc[:, ~df.columns.duplicated()].copy()
-    
+
     print(f"[DEBUG] CSV columns: {list(df.columns)}")
     if not df.empty:
         print(f"[DEBUG] First row Symbol='{df.iloc[0].get('Symbol', 'MISSING')}', Indicator='{df.iloc[0].get('Indicator', 'MISSING')}'")
-    
-    # Create new lowercase columns WITHOUT removing originals yet
-    df["symbol"] = df["Symbol"] if "Symbol" in df.columns else ""
-    df["direction"] = df["Direction"].astype(str).str.strip().str.capitalize() if "Direction" in df.columns else ""
-    df["indicator"] = df["Indicator"] if "Indicator" in df.columns else ""
-    df["htf"] = df["HTF"] if "HTF" in df.columns else ""
-    df["param_desc"] = df["ParamDesc"] if "ParamDesc" in df.columns else ""
-    df["entry_time"] = df["EntryTime"] if "EntryTime" in df.columns else ""
-    df["entry_price"] = pd.to_numeric(df["EntryPrice"], errors="coerce") if "EntryPrice" in df.columns else 0.0
-    df["exit_time"] = df["ExitTime"] if "ExitTime" in df.columns else ""
-    df["exit_price"] = pd.to_numeric(df["ExitPrice"], errors="coerce") if "ExitPrice" in df.columns else 0.0
-    df["stake"] = pd.to_numeric(df["Stake"], errors="coerce") if "Stake" in df.columns else 0.0
-    df["fees"] = pd.to_numeric(df["Fees"], errors="coerce") if "Fees" in df.columns else 0.0
-    df["pnl"] = pd.to_numeric(df["PnL"], errors="coerce") if "PnL" in df.columns else 0.0
-    df["equity_after"] = pd.to_numeric(df["EquityAfter"], errors="coerce") if "EquityAfter" in df.columns else 0.0
-    df["reason"] = df["Reason"] if "Reason" in df.columns else ""
-    
+
+    # Map columns to lowercase standard format
+    # Handle both old format (Uppercase) and new format (lowercase)
+    # If lowercase column already exists, use it; otherwise map from Uppercase
+
+    if "symbol" not in df.columns:
+        df["symbol"] = df["Symbol"] if "Symbol" in df.columns else ""
+    if "direction" not in df.columns:
+        if "Direction" in df.columns:
+            df["direction"] = df["Direction"].astype(str).str.strip().str.capitalize()
+        else:
+            df["direction"] = ""
+    else:
+        # Ensure direction is always capitalized even if column already exists
+        df["direction"] = df["direction"].astype(str).str.strip().str.capitalize()
+    if "indicator" not in df.columns:
+        df["indicator"] = df["Indicator"] if "Indicator" in df.columns else ""
+    if "htf" not in df.columns:
+        df["htf"] = df["HTF"] if "HTF" in df.columns else ""
+    if "param_desc" not in df.columns:
+        df["param_desc"] = df["ParamDesc"] if "ParamDesc" in df.columns else ""
+    if "entry_time" not in df.columns:
+        df["entry_time"] = df["EntryTime"] if "EntryTime" in df.columns else ""
+    if "entry_price" not in df.columns:
+        df["entry_price"] = pd.to_numeric(df["EntryPrice"], errors="coerce") if "EntryPrice" in df.columns else 0.0
+    else:
+        # Ensure entry_price is always numeric
+        df["entry_price"] = pd.to_numeric(df["entry_price"], errors="coerce")
+    if "exit_time" not in df.columns:
+        df["exit_time"] = df["ExitTime"] if "ExitTime" in df.columns else ""
+    if "exit_price" not in df.columns:
+        df["exit_price"] = pd.to_numeric(df["ExitPrice"], errors="coerce") if "ExitPrice" in df.columns else 0.0
+    else:
+        # Ensure exit_price is always numeric
+        df["exit_price"] = pd.to_numeric(df["exit_price"], errors="coerce")
+    if "stake" not in df.columns:
+        df["stake"] = pd.to_numeric(df["Stake"], errors="coerce") if "Stake" in df.columns else 0.0
+    else:
+        # Ensure stake is always numeric
+        df["stake"] = pd.to_numeric(df["stake"], errors="coerce")
+    if "fees" not in df.columns:
+        df["fees"] = pd.to_numeric(df["Fees"], errors="coerce") if "Fees" in df.columns else 0.0
+    else:
+        # Ensure fees is always numeric
+        df["fees"] = pd.to_numeric(df["fees"], errors="coerce")
+    if "pnl" not in df.columns:
+        df["pnl"] = pd.to_numeric(df["PnL"], errors="coerce") if "PnL" in df.columns else 0.0
+    else:
+        # Ensure pnl is always numeric
+        df["pnl"] = pd.to_numeric(df["pnl"], errors="coerce")
+    if "equity_after" not in df.columns:
+        df["equity_after"] = pd.to_numeric(df["EquityAfter"], errors="coerce") if "EquityAfter" in df.columns else 0.0
+    else:
+        # Ensure equity_after is always numeric
+        df["equity_after"] = pd.to_numeric(df["equity_after"], errors="coerce")
+    if "reason" not in df.columns:
+        df["reason"] = df["Reason"] if "Reason" in df.columns else ""
+
     # Debug output
     print(f"[Live] Loaded {len(df)} trades from log.")
     if not df.empty and "symbol" in df.columns:
         print(f"[DEBUG] After mapping - First symbol='{df.iloc[0]['symbol']}', indicator='{df.iloc[0]['indicator']}'")
         unique_symbols = df["symbol"].dropna().unique()
         print(f"[Live] Symbols in log: {', '.join(str(s) for s in unique_symbols)}")
-    
+
     return df
 
 
