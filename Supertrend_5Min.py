@@ -222,6 +222,17 @@ _exchange = None
 _data_exchange = None
 DATA_CACHE = {}
 
+# ============================================================================
+# LOCAL CONFIGURATION OVERRIDE
+# ============================================================================
+# Import local config overrides if config_local.py exists
+# This allows you to override any config variable without git conflicts
+try:
+	from config_local import *
+	print("[Config] Loaded local configuration overrides from config_local.py")
+except ImportError:
+	pass  # No local config file - use defaults above
+
 
 def configure_exchange(use_testnet=None) -> None:
 	global USE_TESTNET, _exchange, _data_exchange

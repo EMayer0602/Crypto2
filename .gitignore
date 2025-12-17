@@ -5,6 +5,14 @@ paper_trading_simulation_log.json
 paper_trading_state.json
 merge_history.json
 
+# Local configuration (never commit personal settings)
+config_local.py
+
+# Backtest results (generated files)
+best_params_*.csv
+backtest_results_*.csv
+sweep_results_*.csv
+
 # HTML Reports
 report_html/
 *.html
