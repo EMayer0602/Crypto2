@@ -89,8 +89,9 @@ ENABLE_SHORTS = False
 STRATEGY_MODE = "trend_flip"  # Default: trend flip strategy
 
 USE_MIN_HOLD_FILTER = True
-DEFAULT_MIN_HOLD_DAYS = 0
-MIN_HOLD_DAY_VALUES = [0, 1, 2]
+DEFAULT_MIN_HOLD_BARS = 0
+# Min hold bar values - examples for 1h timeframe: [0, 12, 24, 48] = [0h, 12h, 1d, 2d]
+MIN_HOLD_BAR_VALUES = [0, 12, 24]
 
 USE_HIGHER_TIMEFRAME_FILTER = True
 HIGHER_TIMEFRAME = "12h"
@@ -866,12 +867,11 @@ def calculate_dynamic_min_hold_days(
 		return min_days
 
 
-def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=0, min_hold_days=None):
+def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=0):
 	direction = direction.lower()
 	if direction not in {"long", "short"}:
 		raise ValueError("direction must be 'long' or 'short'")
 	min_hold_bars = 0 if min_hold_bars is None else max(0, int(min_hold_bars))
-	min_hold_days = min_hold_days if min_hold_days is not None else 0
 
 	long_mode = direction == "long"
 	equity = START_EQUITY
@@ -978,7 +978,7 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 			"PnL (USD)": pnl_usd,
 			"Equity": equity,
 			"Direction": direction.capitalize(),
-			"MinHoldDays": min_hold_days
+			"MinHoldBars": min_hold_bars
 		})
 		in_position = False
 		entry_capital = None
@@ -1006,13 +1006,13 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 			"PnL (USD)": pnl_usd,
 			"Equity": equity,
 			"Direction": direction.capitalize(),
-			"MinHoldDays": min_hold_days
+			"MinHoldBars": min_hold_bars
 		})
 
 	return pd.DataFrame(trades)
 
 
-def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_bars=0, min_hold_days=None):
+def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_bars=0):
 	"""
 	Backtest HTF Crossover Strategy
 	Entry: Close crosses HTF indicator (upward for long, downward for short)
@@ -1022,7 +1022,6 @@ def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_ba
 	if direction not in {"long", "short"}:
 		raise ValueError("direction must be 'long' or 'short'")
 	min_hold_bars = 0 if min_hold_bars is None else max(0, int(min_hold_bars))
-	min_hold_days = min_hold_days if min_hold_days is not None else 0
 
 	long_mode = direction == "long"
 	equity = START_EQUITY
@@ -1151,7 +1150,7 @@ def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_ba
 			"PnL (USD)": pnl_usd,
 			"Equity": equity,
 			"Direction": direction.capitalize(),
-			"MinHoldDays": min_hold_days
+			"MinHoldBars": min_hold_bars
 		})
 		in_position = False
 		entry_capital = None
@@ -1180,13 +1179,13 @@ def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_ba
 			"PnL (USD)": pnl_usd,
 			"Equity": equity,
 			"Direction": direction.capitalize(),
-			"MinHoldDays": min_hold_days
+			"MinHoldBars": min_hold_bars
 		})
 
 	return pd.DataFrame(trades)
 
 
-def performance_report(trades_df, symbol, param_a, param_b, direction, min_hold_days):
+def performance_report(trades_df, symbol, param_a, param_b, direction, min_hold_bars):
 	base = {
 		"Symbol": symbol,
 		"ParamA": param_a,
@@ -1208,7 +1207,7 @@ def performance_report(trades_df, symbol, param_a, param_b, direction, min_hold_
 			"MaxDrawdown": 0.0,
 			"FinalEquity": START_EQUITY,
 			"Direction": direction,
-			"MinHoldDays": min_hold_days,
+			"MinHoldBars": min_hold_bars,
 		}
 
 	wins = trades_df[trades_df["PnL (USD)"] > 0]
@@ -1230,7 +1229,7 @@ def performance_report(trades_df, symbol, param_a, param_b, direction, min_hold_
 		"MaxDrawdown": max_drawdown,
 		"FinalEquity": final_eq,
 		"Direction": direction,
-		"MinHoldDays": min_hold_days,
+		"MinHoldBars": min_hold_bars,
 	}
 
 
@@ -1275,9 +1274,9 @@ def build_equity_series(df, trades_df, direction):
 	return equity_series.ffill().fillna(START_EQUITY)
 
 
-def build_two_panel_figure(symbol, df, trades_df, param_a, param_b, direction, min_hold_days=None):
+def build_two_panel_figure(symbol, df, trades_df, param_a, param_b, direction, min_hold_bars=None):
 	direction_title = direction.capitalize()
-	hold_text = f", Hold≥{min_hold_days}d" if min_hold_days else ""
+	hold_text = f", Hold≥{min_hold_bars} bars" if min_hold_bars else ""
 	indicator_desc = f"{INDICATOR_DISPLAY_NAME} {PARAM_A_LABEL}={param_a}, {PARAM_B_LABEL}={param_b}"
 	line_name = "Supertrend" if INDICATOR_TYPE == "supertrend" else INDICATOR_DISPLAY_NAME
 	fig = make_subplots(
@@ -1556,7 +1555,7 @@ def write_flat_trade_list(rows):
 		PARAM_B_LABEL,
 		"ATRStopMultValue",
 		"ATRStopMult",
-		"MinHoldDays",
+		"MinHoldBars",
 		"FinalEquity",
 		"Trades",
 		"WinRate",
@@ -1672,12 +1671,11 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 		param_a, param_b = _normalize_param_values(param_a, param_b)
 		atr_mult = row.get("ATRStopMultValue", row.get("ATRStopMult"))
 		atr_mult = _normalize_atr_value(atr_mult)
-		hold_days = row.get("MinHoldDays", DEFAULT_MIN_HOLD_DAYS)
-		if pd.isna(hold_days):
-			hold_days = DEFAULT_MIN_HOLD_DAYS
+		min_hold_bars = row.get("MinHoldBars", DEFAULT_MIN_HOLD_BARS)
+		if pd.isna(min_hold_bars):
+			min_hold_bars = DEFAULT_MIN_HOLD_BARS
 		else:
-			hold_days = int(hold_days)
-		min_hold_bars = hold_days * BARS_PER_DAY
+			min_hold_bars = int(min_hold_bars)
 		if symbol not in data_cache:
 			data_cache[symbol] = prepare_symbol_dataframe(symbol)
 		df_raw = data_cache[symbol]
@@ -1697,7 +1695,6 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 				atr_stop_mult=atr_mult,
 				direction=direction,
 				min_hold_bars=min_hold_bars,
-				min_hold_days=hold_days,
 			)
 		else:  # Default: trend_flip
 			trades = backtest_supertrend(
@@ -1705,19 +1702,18 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 				atr_stop_mult=atr_mult,
 				direction=direction,
 				min_hold_bars=min_hold_bars,
-				min_hold_days=hold_days,
 			)
 		direction_title = direction.capitalize()
 		atr_label = "None" if atr_mult is None else atr_mult
 		param_desc = f"{PARAM_A_LABEL}={param_a}, {PARAM_B_LABEL}={param_b}"
-		print(f"  · {symbol} {direction_title} ({param_desc}, ATR={atr_label}, MinHold={hold_days}d)")
+		print(f"  · {symbol} {direction_title} ({param_desc}, ATR={atr_label}, MinHold={min_hold_bars} bars)")
 		stats = performance_report(
 			trades,
 			symbol,
 			param_a,
 			param_b,
 			direction_title,
-			hold_days,
+			min_hold_bars,
 		)
 		updated_row = dict(row_dict)
 		updated_row.update({
@@ -1725,7 +1721,7 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 			"ParamB": param_b,
 			PARAM_A_LABEL: param_a,
 			PARAM_B_LABEL: param_b,
-			"MinHoldDays": hold_days,
+			"MinHoldBars": hold_days,
 			"ATRStopMult": atr_label,
 			"ATRStopMultValue": atr_mult,
 			"HTF": HIGHER_TIMEFRAME,
@@ -1797,7 +1793,7 @@ def run_parameter_sweep():
 	clear_directory(OUT_DIR)
 
 	directions = get_enabled_directions()
-	hold_day_candidates = MIN_HOLD_DAY_VALUES if USE_MIN_HOLD_FILTER else [DEFAULT_MIN_HOLD_DAYS]
+	hold_bar_candidates = MIN_HOLD_BAR_VALUES if USE_MIN_HOLD_FILTER else [DEFAULT_MIN_HOLD_BARS]
 
 	for symbol in SYMBOLS:
 		df_raw = prepare_symbol_dataframe(symbol)
@@ -1816,8 +1812,7 @@ def run_parameter_sweep():
 					df_cache[cache_key] = df_tmp
 				df_st = df_cache[cache_key]
 				for atr_mult in ATR_STOP_MULTS:
-					for hold_days in hold_day_candidates:
-						min_hold_bars = hold_days * BARS_PER_DAY
+					for min_hold_bars in hold_bar_candidates:
 						for direction in directions:
 							df_st_with_htf = df_st.copy()
 							for col in ("htf_trend", "htf_indicator", "momentum"):
@@ -1830,7 +1825,6 @@ def run_parameter_sweep():
 									atr_stop_mult=atr_mult,
 									direction=direction,
 									min_hold_bars=min_hold_bars,
-									min_hold_days=hold_days,
 								)
 							else:  # Default: trend_flip
 								trades = backtest_supertrend(
@@ -1838,7 +1832,6 @@ def run_parameter_sweep():
 									atr_stop_mult=atr_mult,
 									direction=direction,
 									min_hold_bars=min_hold_bars,
-									min_hold_days=hold_days,
 								)
 							stats = performance_report(
 								trades,
@@ -1846,12 +1839,12 @@ def run_parameter_sweep():
 								param_a,
 								param_b,
 								direction.capitalize(),
-								hold_days,
+								min_hold_bars,
 							)
 							stats["ATRStopMult"] = atr_mult if atr_mult is not None else "None"
 							stats["MinHoldBars"] = min_hold_bars
 							results[direction].append(stats)
-							trades_per_combo[direction][(param_a, param_b, atr_mult, hold_days)] = trades
+							trades_per_combo[direction][(param_a, param_b, atr_mult, min_hold_bars)] = trades
 
 		for direction in directions:
 			dir_results = results[direction]
@@ -1867,7 +1860,7 @@ def run_parameter_sweep():
 
 			best_param_a, best_param_b = DEFAULT_PARAM_A, DEFAULT_PARAM_B
 			best_atr = None
-			best_hold_days = DEFAULT_MIN_HOLD_DAYS
+			best_hold_days = DEFAULT_MIN_HOLD_BARS
 			final_equity = START_EQUITY
 			trades_count = 0
 			win_rate = 0.0
@@ -1880,7 +1873,7 @@ def run_parameter_sweep():
 				best_param_b = best_param_b if not pd.isna(best_param_b) else DEFAULT_PARAM_B
 				best_atr_raw = best_row.get("ATRStopMult", "None")
 				best_atr = best_atr_raw if best_atr_raw != "None" else None
-				best_hold_days = int(best_row.get("MinHoldDays", DEFAULT_MIN_HOLD_DAYS))
+				best_hold_days = int(best_row.get("MinHoldBars", DEFAULT_MIN_HOLD_BARS))
 				final_equity = float(best_row.get("FinalEquity", START_EQUITY))
 				trades_count = int(best_row.get("Trades", 0))
 				win_rate = float(best_row.get("WinRate", 0.0))
@@ -1908,7 +1901,7 @@ def run_parameter_sweep():
 				"Factor": best_param_b if INDICATOR_TYPE == "supertrend" else None,
 				"ATRStopMult": atr_label,
 				"ATRStopMultValue": best_atr,
-				"MinHoldDays": best_hold_days,
+				"MinHoldBars": best_hold_days,
 				"HTF": HIGHER_TIMEFRAME,
 				"FinalEquity": final_equity,
 				"Trades": trades_count,
