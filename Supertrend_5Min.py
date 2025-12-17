@@ -85,6 +85,9 @@ RUN_OVERALL_BEST = True
 ENABLE_LONGS = True
 ENABLE_SHORTS = False
 
+# Strategy Mode: "trend_flip" or "htf_crossover"
+STRATEGY_MODE = "trend_flip"  # Default: trend flip strategy
+
 USE_MIN_HOLD_FILTER = True
 DEFAULT_MIN_HOLD_DAYS = 0
 MIN_HOLD_DAY_VALUES = [0, 1, 2]
@@ -124,11 +127,13 @@ BASE_OUT_DIR = "report_html"
 BARS_PER_DAY = max(1, int(1440 / timeframe_to_minutes(TIMEFRAME)))
 CLEAR_BASE_OUTPUT_ON_SWEEP = True
 
-OVERALL_SUMMARY_HTML = os.path.join(BASE_OUT_DIR, "overall_best_results.html")
-OVERALL_PARAMS_CSV = os.path.join(BASE_OUT_DIR, "best_params_overall.csv")
-OVERALL_DETAILED_HTML = os.path.join(BASE_OUT_DIR, "overall_best_detailed.html")
-OVERALL_FLAT_CSV = os.path.join(BASE_OUT_DIR, "overall_best_flat_trades.csv")
-OVERALL_FLAT_JSON = os.path.join(BASE_OUT_DIR, "overall_best_flat_trades.json")
+# Output file paths based on strategy mode
+_strategy_suffix = f"_{STRATEGY_MODE}" if STRATEGY_MODE != "trend_flip" else ""
+OVERALL_SUMMARY_HTML = os.path.join(BASE_OUT_DIR, f"overall_best_results{_strategy_suffix}.html")
+OVERALL_PARAMS_CSV = os.path.join(BASE_OUT_DIR, f"best_params_overall{_strategy_suffix}.csv")
+OVERALL_DETAILED_HTML = os.path.join(BASE_OUT_DIR, f"overall_best_detailed{_strategy_suffix}.html")
+OVERALL_FLAT_CSV = os.path.join(BASE_OUT_DIR, f"overall_best_flat_trades{_strategy_suffix}.csv")
+OVERALL_FLAT_JSON = os.path.join(BASE_OUT_DIR, f"overall_best_flat_trades{_strategy_suffix}.json")
 GLOBAL_BEST_RESULTS = {}
 
 INDICATOR_PRESETS = {
@@ -1007,6 +1012,180 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 	return pd.DataFrame(trades)
 
 
+def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_bars=0, min_hold_days=None):
+	"""
+	Backtest HTF Crossover Strategy
+	Entry: Close crosses HTF indicator (upward for long, downward for short)
+	Exit: Close crosses HTF indicator (opposite direction) or ATR stop
+	"""
+	direction = direction.lower()
+	if direction not in {"long", "short"}:
+		raise ValueError("direction must be 'long' or 'short'")
+	min_hold_bars = 0 if min_hold_bars is None else max(0, int(min_hold_bars))
+	min_hold_days = min_hold_days if min_hold_days is not None else 0
+
+	long_mode = direction == "long"
+	equity = START_EQUITY
+	trades = []
+	in_position = False
+	entry_price = None
+	entry_ts = None
+	entry_capital = None
+	entry_atr = None
+	bars_in_position = 0
+
+	# Check if HTF indicator column exists
+	if "indicator_line" not in df.columns:
+		print("[Warning] HTF indicator column 'indicator_line' not found")
+		return pd.DataFrame(trades)
+
+	for i in range(1, len(df)):
+		ts = df.index[i]
+		curr = df.iloc[i]
+		prev = df.iloc[i - 1]
+
+		close_curr = float(curr["close"])
+		close_prev = float(prev["close"])
+		htf_curr = float(curr["indicator_line"])
+		htf_prev = float(prev["indicator_line"])
+
+		# Entry logic: Close crosses HTF indicator
+		if not in_position:
+			crossover_entry = False
+
+			if long_mode:
+				# Long entry: Close crosses above HTF
+				if close_prev < htf_prev and close_curr > htf_curr:
+					crossover_entry = True
+			else:
+				# Short entry: Close crosses below HTF
+				if close_prev > htf_prev and close_curr < htf_curr:
+					crossover_entry = True
+
+			# Apply filters (HTF, momentum, breakout) like in trend_flip strategy
+			if crossover_entry:
+				htf_value = int(curr["htf_trend"]) if "htf_trend" in df.columns else 0
+				htf_allows = True
+				if USE_HIGHER_TIMEFRAME_FILTER:
+					htf_allows = htf_value >= 1 if long_mode else htf_value <= -1
+
+				momentum_allows = True
+				if USE_MOMENTUM_FILTER and "momentum" in df.columns:
+					mom_value = curr["momentum"]
+					if pd.isna(mom_value):
+						momentum_allows = False
+					else:
+						momentum_allows = mom_value >= RSI_LONG_THRESHOLD if long_mode else mom_value <= RSI_SHORT_THRESHOLD
+
+				breakout_allows = True
+				if USE_BREAKOUT_FILTER:
+					atr_curr = curr["atr"]
+					if atr_curr is None or np.isnan(atr_curr) or atr_curr <= 0:
+						breakout_allows = False
+					else:
+						candle_range = float(curr["high"] - curr["low"])
+						breakout_allows = candle_range >= BREAKOUT_ATR_MULT * float(atr_curr)
+						if breakout_allows and BREAKOUT_REQUIRE_DIRECTION:
+							prev_high = float(prev["high"])
+							prev_low = float(prev["low"])
+							breakout_allows = close_curr > prev_high if long_mode else close_curr < prev_low
+
+				if htf_allows and momentum_allows and breakout_allows:
+					in_position = True
+					entry_price = close_curr
+					entry_ts = ts
+					entry_capital = equity / STAKE_DIVISOR
+					atr_val = curr["atr"]
+					entry_atr = float(atr_val) if not np.isnan(atr_val) else 0.0
+					bars_in_position = 0
+			continue
+
+		bars_in_position += 1
+		stake = entry_capital if entry_capital is not None else equity / STAKE_DIVISOR
+		atr_buffer = entry_atr if entry_atr is not None else 0.0
+		stop_price = None
+		if atr_stop_mult is not None and atr_buffer and atr_buffer > 0:
+			stop_price = entry_price - atr_stop_mult * atr_buffer if long_mode else entry_price + atr_stop_mult * atr_buffer
+
+		exit_price = None
+		exit_reason = None
+
+		# ATR stop has priority
+		if stop_price is not None:
+			if long_mode and float(curr["low"]) <= stop_price:
+				exit_price = stop_price
+				exit_reason = "ATR stop"
+			elif (not long_mode) and float(curr["high"]) >= stop_price:
+				exit_price = stop_price
+				exit_reason = "ATR stop"
+
+		# HTF crossover exit (only if min_hold_bars satisfied)
+		if exit_price is None and bars_in_position >= min_hold_bars:
+			if long_mode:
+				# Long exit: Close crosses below HTF
+				if close_prev > htf_prev and close_curr < htf_curr:
+					exit_price = close_curr
+					exit_reason = "HTF crossover exit"
+			else:
+				# Short exit: Close crosses above HTF
+				if close_prev < htf_prev and close_curr > htf_curr:
+					exit_price = close_curr
+					exit_reason = "HTF crossover exit"
+
+		if exit_price is None:
+			continue
+
+		price_diff = exit_price - entry_price if long_mode else entry_price - exit_price
+		gross_pnl = price_diff / entry_price * stake
+		fees = stake * FEE_RATE * 2.0
+		pnl_usd = gross_pnl - fees
+		equity += pnl_usd
+		trades.append({
+			"Zeit": entry_ts,
+			"Entry": entry_price,
+			"ExitZeit": ts,
+			"ExitPreis": exit_price,
+			"Stake": stake,
+			"Fees": fees,
+			"ExitReason": exit_reason,
+			"PnL (USD)": pnl_usd,
+			"Equity": equity,
+			"Direction": direction.capitalize(),
+			"MinHoldDays": min_hold_days
+		})
+		in_position = False
+		entry_capital = None
+		entry_atr = None
+		bars_in_position = 0
+
+	# Close open position at final bar
+	if in_position:
+		last = df.iloc[-1]
+		exit_ts = last.name
+		exit_price = float(last["close"])
+		stake = entry_capital if entry_capital is not None else equity / STAKE_DIVISOR
+		price_diff = exit_price - entry_price if long_mode else entry_price - exit_price
+		gross_pnl = price_diff / entry_price * stake
+		fees = stake * FEE_RATE * 2.0
+		pnl_usd = gross_pnl - fees
+		equity += pnl_usd
+		trades.append({
+			"Zeit": entry_ts,
+			"Entry": entry_price,
+			"ExitZeit": exit_ts,
+			"ExitPreis": exit_price,
+			"Stake": stake,
+			"Fees": fees,
+			"ExitReason": "Final bar",
+			"PnL (USD)": pnl_usd,
+			"Equity": equity,
+			"Direction": direction.capitalize(),
+			"MinHoldDays": min_hold_days
+		})
+
+	return pd.DataFrame(trades)
+
+
 def performance_report(trades_df, symbol, param_a, param_b, direction, min_hold_days):
 	base = {
 		"Symbol": symbol,
@@ -1510,13 +1689,24 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 					df_tmp[col] = df_raw[col]
 			st_cache[st_key] = df_tmp
 		df_st = st_cache[st_key]
-		trades = backtest_supertrend(
-			df_st,
-			atr_stop_mult=atr_mult,
-			direction=direction,
-			min_hold_bars=min_hold_bars,
-			min_hold_days=hold_days,
-		)
+
+		# Select backtest function based on strategy mode
+		if STRATEGY_MODE == "htf_crossover":
+			trades = backtest_htf_crossover(
+				df_st,
+				atr_stop_mult=atr_mult,
+				direction=direction,
+				min_hold_bars=min_hold_bars,
+				min_hold_days=hold_days,
+			)
+		else:  # Default: trend_flip
+			trades = backtest_supertrend(
+				df_st,
+				atr_stop_mult=atr_mult,
+				direction=direction,
+				min_hold_bars=min_hold_bars,
+				min_hold_days=hold_days,
+			)
 		direction_title = direction.capitalize()
 		atr_label = "None" if atr_mult is None else atr_mult
 		param_desc = f"{PARAM_A_LABEL}={param_a}, {PARAM_B_LABEL}={param_b}"
@@ -1633,13 +1823,23 @@ def run_parameter_sweep():
 							for col in ("htf_trend", "htf_indicator", "momentum"):
 								if col in df_raw.columns:
 									df_st_with_htf[col] = df_raw[col]
-							trades = backtest_supertrend(
-								df_st_with_htf,
-								atr_stop_mult=atr_mult,
-								direction=direction,
-								min_hold_bars=min_hold_bars,
-								min_hold_days=hold_days,
-							)
+							# Select backtest function based on strategy mode
+							if STRATEGY_MODE == "htf_crossover":
+								trades = backtest_htf_crossover(
+									df_st_with_htf,
+									atr_stop_mult=atr_mult,
+									direction=direction,
+									min_hold_bars=min_hold_bars,
+									min_hold_days=hold_days,
+								)
+							else:  # Default: trend_flip
+								trades = backtest_supertrend(
+									df_st_with_htf,
+									atr_stop_mult=atr_mult,
+									direction=direction,
+									min_hold_bars=min_hold_bars,
+									min_hold_days=hold_days,
+								)
 							stats = performance_report(
 								trades,
 								symbol,
