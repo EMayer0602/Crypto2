@@ -1434,6 +1434,10 @@ def generate_summary_html(
         # Prepare display DataFrame - ensure numeric columns are actually numeric
         open_display = open_positions_df.copy()
 
+        # Remove rows where essential columns are NaN (filter out empty rows)
+        if "symbol" in open_display.columns:
+            open_display = open_display[open_display["symbol"].notna()]
+
         # Convert all numeric columns to proper types
         for col in ["entry_price", "stake", "last_price", "unrealized_pnl", "unrealized_pct"]:
             if col in open_display.columns:
