@@ -85,9 +85,6 @@ RUN_OVERALL_BEST = True
 ENABLE_LONGS = True
 ENABLE_SHORTS = False
 
-# Strategy Mode: "trend_flip" or "htf_crossover"
-STRATEGY_MODE = "trend_flip"  # Default: trend flip strategy
-
 USE_MIN_HOLD_FILTER = True
 DEFAULT_MIN_HOLD_BARS = 0
 # Min hold bar values - examples for 1h timeframe: [0, 12, 24, 48] = [0h, 12h, 1d, 2d]
@@ -128,19 +125,28 @@ BASE_OUT_DIR = "report_html"
 BARS_PER_DAY = max(1, int(1440 / timeframe_to_minutes(TIMEFRAME)))
 CLEAR_BASE_OUTPUT_ON_SWEEP = True
 
-# Output file paths based on strategy mode
-_strategy_suffix = f"_{STRATEGY_MODE}" if STRATEGY_MODE != "trend_flip" else ""
-OVERALL_SUMMARY_HTML = os.path.join(BASE_OUT_DIR, f"overall_best_results{_strategy_suffix}.html")
-OVERALL_PARAMS_CSV = os.path.join(BASE_OUT_DIR, f"best_params_overall{_strategy_suffix}.csv")
-OVERALL_DETAILED_HTML = os.path.join(BASE_OUT_DIR, f"overall_best_detailed{_strategy_suffix}.html")
-OVERALL_FLAT_CSV = os.path.join(BASE_OUT_DIR, f"overall_best_flat_trades{_strategy_suffix}.csv")
-OVERALL_FLAT_JSON = os.path.join(BASE_OUT_DIR, f"overall_best_flat_trades{_strategy_suffix}.json")
+# Output file paths
+OVERALL_SUMMARY_HTML = os.path.join(BASE_OUT_DIR, "overall_best_results.html")
+OVERALL_PARAMS_CSV = os.path.join(BASE_OUT_DIR, "best_params_overall.csv")
+OVERALL_DETAILED_HTML = os.path.join(BASE_OUT_DIR, "overall_best_detailed.html")
+OVERALL_FLAT_CSV = os.path.join(BASE_OUT_DIR, "overall_best_flat_trades.csv")
+OVERALL_FLAT_JSON = os.path.join(BASE_OUT_DIR, "overall_best_flat_trades.json")
 GLOBAL_BEST_RESULTS = {}
 
 INDICATOR_PRESETS = {
 	"supertrend": {
 		"display_name": "Supertrend",
 		"slug": "supertrend",
+		"param_a_label": "Length",
+		"param_b_label": "Factor",
+		"param_a_values": [7, 10, 14],
+		"param_b_values": [2.0, 3.0, 4.0],
+		"default_a": 10,
+		"default_b": 3.0,
+	},
+	"htf_crossover": {
+		"display_name": "HTF Crossover",
+		"slug": "htf_crossover",
 		"param_a_label": "Length",
 		"param_b_label": "Factor",
 		"param_a_values": [7, 10, 14],
@@ -693,7 +699,7 @@ def compute_mama(df, fast_limit=0.5, slow_limit=0.05):
 
 
 def compute_indicator(df, param_a, param_b):
-	if INDICATOR_TYPE == "supertrend":
+	if INDICATOR_TYPE == "supertrend" or INDICATOR_TYPE == "htf_crossover":
 		return compute_supertrend(df, length=int(param_a), factor=float(param_b))
 	if INDICATOR_TYPE == "psar":
 		return compute_psar(df, step=float(param_a), max_step=float(param_b))
@@ -720,7 +726,7 @@ def attach_higher_timeframe_trend(df_low, symbol):
 		df_low["htf_indicator"] = np.nan
 		return df_low
 
-	if INDICATOR_TYPE == "supertrend":
+	if INDICATOR_TYPE == "supertrend" or INDICATOR_TYPE == "htf_crossover":
 		df_high_ind = compute_supertrend(df_high, length=HTF_LENGTH, factor=HTF_FACTOR)
 		indicator_col = "supertrend"
 		trend_col = "st_trend"
@@ -1688,15 +1694,15 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 			st_cache[st_key] = df_tmp
 		df_st = st_cache[st_key]
 
-		# Select backtest function based on strategy mode
-		if STRATEGY_MODE == "htf_crossover":
+		# Select backtest function based on indicator type
+		if INDICATOR_TYPE == "htf_crossover":
 			trades = backtest_htf_crossover(
 				df_st,
 				atr_stop_mult=atr_mult,
 				direction=direction,
 				min_hold_bars=min_hold_bars,
 			)
-		else:  # Default: trend_flip
+		else:  # Default: trend_flip for all other indicators
 			trades = backtest_supertrend(
 				df_st,
 				atr_stop_mult=atr_mult,
@@ -1818,15 +1824,15 @@ def run_parameter_sweep():
 							for col in ("htf_trend", "htf_indicator", "momentum"):
 								if col in df_raw.columns:
 									df_st_with_htf[col] = df_raw[col]
-							# Select backtest function based on strategy mode
-							if STRATEGY_MODE == "htf_crossover":
+							# Select backtest function based on indicator type
+							if INDICATOR_TYPE == "htf_crossover":
 								trades = backtest_htf_crossover(
 									df_st_with_htf,
 									atr_stop_mult=atr_mult,
 									direction=direction,
 									min_hold_bars=min_hold_bars,
 								)
-							else:  # Default: trend_flip
+							else:  # Default: trend_flip for all other indicators
 								trades = backtest_supertrend(
 									df_st_with_htf,
 									atr_stop_mult=atr_mult,
