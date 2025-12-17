@@ -781,7 +781,7 @@ def prepare_symbol_dataframe(symbol):
 	return df
 
 
-def calculate_dynamic_min_hold_days(
+def calculate_dynamic_min_min_hold_bars(
 	symbol: str,
 	recent_trades_df: pd.DataFrame = None,
 	lookback_days: int = 30,
@@ -1519,7 +1519,7 @@ def write_combined_overall_best_report(sections):
 	def render_entry(entry):
 		meta = (
 			f"<h3>{entry['symbol']} – {entry['direction']} – {entry['indicator']} ({entry['htf']})<br>"
-			f"{entry['param_desc']}, ATRStop={entry['atr_label']}, MinHold={entry['min_hold_days']}d</h3>"
+			f"{entry['param_desc']}, ATRStop={entry['atr_label']}, MinHold={entry['min_min_hold_bars']}d</h3>"
 		)
 		html.append("<section>")
 		html.append(meta)
@@ -1721,7 +1721,7 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 			"ParamB": param_b,
 			PARAM_A_LABEL: param_a,
 			PARAM_B_LABEL: param_b,
-			"MinHoldBars": hold_days,
+			"MinHoldBars": min_hold_bars,
 			"ATRStopMult": atr_label,
 			"ATRStopMultValue": atr_mult,
 			"HTF": HIGHER_TIMEFRAME,
@@ -1740,16 +1740,16 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 			param_a,
 			param_b,
 			direction_title,
-			min_hold_days=hold_days,
+			min_hold_bars=min_hold_bars,
 		)
 		fig_html = pio.to_html(fig, include_plotlyjs="cdn", full_html=False)
 		figs_blocks.append(
-			f"<h2>{symbol} – {direction_title} gespeicherte Parameter: {param_desc}, ATRStop={atr_label}, MinHold={hold_days}d</h2>\n"
+			f"<h2>{symbol} – {direction_title} gespeicherte Parameter: {param_desc}, ATRStop={atr_label}, MinHold={min_hold_bars} bars</h2>\n"
 			+ fig_html
 		)
 		trade_table_html = df_to_html_table(
 			trades,
-			title=f"Trade-Liste {symbol} ({direction_title} gespeicherte Parameter, MinHold={hold_days}d)",
+			title=f"Trade-Liste {symbol} ({direction_title} gespeicherte Parameter, MinHold={min_hold_bars} bars)",
 		)
 		sections_blocks.append(trade_table_html)
 		csv_suffix = "" if direction == "long" else "_short"
@@ -1765,7 +1765,7 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 				"direction": direction_title,
 				"param_desc": param_desc,
 				"atr_label": atr_label,
-				"min_hold_days": hold_days,
+				"min_min_hold_bars": min_hold_bars,
 				"fig_html": fig_html,
 				"trade_table_html": trade_table_html,
 				"final_equity": stats.get("FinalEquity", START_EQUITY),
@@ -1860,7 +1860,7 @@ def run_parameter_sweep():
 
 			best_param_a, best_param_b = DEFAULT_PARAM_A, DEFAULT_PARAM_B
 			best_atr = None
-			best_hold_days = DEFAULT_MIN_HOLD_BARS
+			best_hold_bars = DEFAULT_MIN_HOLD_BARS
 			final_equity = START_EQUITY
 			trades_count = 0
 			win_rate = 0.0
@@ -1873,13 +1873,13 @@ def run_parameter_sweep():
 				best_param_b = best_param_b if not pd.isna(best_param_b) else DEFAULT_PARAM_B
 				best_atr_raw = best_row.get("ATRStopMult", "None")
 				best_atr = best_atr_raw if best_atr_raw != "None" else None
-				best_hold_days = int(best_row.get("MinHoldBars", DEFAULT_MIN_HOLD_BARS))
+				best_hold_bars = int(best_row.get("MinHoldBars", DEFAULT_MIN_HOLD_BARS))
 				final_equity = float(best_row.get("FinalEquity", START_EQUITY))
 				trades_count = int(best_row.get("Trades", 0))
 				win_rate = float(best_row.get("WinRate", 0.0))
 				max_dd = float(best_row.get("MaxDrawdown", 0.0))
 				best_df = df_cache[(best_param_a, best_param_b)]
-				best_trades = trades_per_combo[direction][(best_param_a, best_param_b, best_atr, best_hold_days)]
+				best_trades = trades_per_combo[direction][(best_param_a, best_param_b, best_atr, best_hold_bars)]
 			else:
 				best_df = compute_indicator(df_raw, best_param_a, best_param_b)
 				for col in ("htf_trend", "htf_indicator", "momentum"):
@@ -1901,7 +1901,7 @@ def run_parameter_sweep():
 				"Factor": best_param_b if INDICATOR_TYPE == "supertrend" else None,
 				"ATRStopMult": atr_label,
 				"ATRStopMultValue": best_atr,
-				"MinHoldBars": best_hold_days,
+				"MinHoldBars": best_hold_bars,
 				"HTF": HIGHER_TIMEFRAME,
 				"FinalEquity": final_equity,
 				"Trades": trades_count,
@@ -1916,18 +1916,18 @@ def run_parameter_sweep():
 				best_param_a,
 				best_param_b,
 				direction.capitalize(),
-				min_hold_days=best_hold_days,
+				min_hold_bars=best_hold_bars,
 			)
 			fig_html = pio.to_html(fig, include_plotlyjs="cdn", full_html=False)
 			figs_blocks.append(
-				f"<h2>{symbol} – {direction.capitalize()} beste Parameter: {PARAM_A_LABEL}={best_param_a}, {PARAM_B_LABEL}={best_param_b}, ATRStop={atr_label}, MinHold={best_hold_days}d</h2>\n"
+				f"<h2>{symbol} – {direction.capitalize()} beste Parameter: {PARAM_A_LABEL}={best_param_a}, {PARAM_B_LABEL}={best_param_b}, ATRStop={atr_label}, MinHold={best_hold_bars} bars</h2>\n"
 				+ fig_html
 			)
 
 			sections_blocks.append(
 				df_to_html_table(
 					best_trades,
-					title=f"Trade-Liste {symbol} ({direction.capitalize()} beste Parameter, MinHold={best_hold_days}d)",
+					title=f"Trade-Liste {symbol} ({direction.capitalize()} beste Parameter, MinHold={best_hold_bars} bars)",
 				)
 			)
 
