@@ -628,14 +628,22 @@ def _load_trade_log_dataframe(log_path: str) -> pd.DataFrame:
     df["pnl"] = pd.to_numeric(df["PnL"], errors="coerce") if "PnL" in df.columns else 0.0
     df["equity_after"] = pd.to_numeric(df["EquityAfter"], errors="coerce") if "EquityAfter" in df.columns else 0.0
     df["reason"] = df["Reason"] if "Reason" in df.columns else ""
-    
+
+    # Drop the original Uppercase columns to avoid duplicates in saved CSV
+    uppercase_cols = ["Symbol", "Direction", "Indicator", "HTF", "ParamDesc",
+                     "EntryTime", "EntryPrice", "ExitTime", "ExitPrice",
+                     "Stake", "Fees", "PnL", "EquityAfter", "Reason"]
+    for col in uppercase_cols:
+        if col in df.columns:
+            df = df.drop(columns=[col])
+
     # Debug output
     print(f"[Live] Loaded {len(df)} trades from log.")
     if not df.empty and "symbol" in df.columns:
         print(f"[DEBUG] After mapping - First symbol='{df.iloc[0]['symbol']}', indicator='{df.iloc[0]['indicator']}'")
         unique_symbols = df["symbol"].dropna().unique()
         print(f"[Live] Symbols in log: {', '.join(str(s) for s in unique_symbols)}")
-    
+
     return df
 
 
