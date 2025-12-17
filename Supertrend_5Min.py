@@ -110,6 +110,12 @@ MOMENTUM_WINDOW = 14
 RSI_LONG_THRESHOLD = 55
 RSI_SHORT_THRESHOLD = 45
 
+USE_JMA_TREND_FILTER = True
+JMA_TREND_LENGTH = 20  # Length for JMA
+JMA_TREND_PHASE = 0  # Phase for JMA
+JMA_TREND_THRESH_UP = 0.0001  # Positive threshold for uptrend
+JMA_TREND_THRESH_DOWN = -0.0001  # Negative threshold for downtrend
+
 USE_BREAKOUT_FILTER = False
 BREAKOUT_ATR_MULT = 1.5
 BREAKOUT_REQUIRE_DIRECTION = True
@@ -619,6 +625,43 @@ def compute_kama(df, length=10, slow_length=30, fast_length=2):
 	return df
 
 
+def calculate_jma_trend_filter(df, length=20, phase=0, thresh_up=0.0001, thresh_down=-0.0001):
+	"""
+	Calculate JMA trend filter using double-smoothed JMA and slope.
+
+	Algorithm:
+	1. Calculate JMA of close prices
+	2. Calculate JMA of the JMA (double smoothing for minimal lag)
+	3. Calculate slope = first difference of double-smoothed JMA
+	4. Classify trend:
+	   - UP: slope > thresh_up
+	   - DOWN: slope < thresh_down
+	   - FLAT: between thresholds
+
+	Returns dataframe with 'jma_trend_slope' and 'jma_trend_direction' columns
+	"""
+	df = df.copy()
+
+	# Step 1: Calculate JMA of close
+	jma_1 = jurik_moving_average(df["close"], length=length, phase=phase)
+
+	# Step 2: Calculate JMA of JMA (double smoothing)
+	jma_2 = jurik_moving_average(jma_1, length=length, phase=phase)
+
+	# Step 3: Calculate slope (first difference)
+	slope = jma_2.diff()
+
+	# Step 4: Classify trend
+	trend_direction = pd.Series("FLAT", index=df.index)
+	trend_direction[slope > thresh_up] = "UP"
+	trend_direction[slope < thresh_down] = "DOWN"
+
+	df["jma_trend_slope"] = slope
+	df["jma_trend_direction"] = trend_direction
+
+	return df
+
+
 def mesa_adaptive_moving_average(series: pd.Series, fast_limit: float = 0.5, slow_limit: float = 0.05):
 	if series.empty:
 		return pd.Series(dtype=float), pd.Series(dtype=float)
@@ -780,10 +823,34 @@ def attach_momentum_filter(df):
 	return df
 
 
+def attach_jma_trend_filter(df):
+	"""
+	Attach JMA trend filter to dataframe.
+
+	Calculates double-smoothed JMA and slope to classify trend as UP/DOWN/FLAT.
+	Only allows LONG entries when trend is UP, SHORT entries when trend is DOWN.
+	"""
+	df = df.copy()
+	if not USE_JMA_TREND_FILTER:
+		df["jma_trend_slope"] = np.nan
+		df["jma_trend_direction"] = "FLAT"
+		return df
+
+	df = calculate_jma_trend_filter(
+		df,
+		length=JMA_TREND_LENGTH,
+		phase=JMA_TREND_PHASE,
+		thresh_up=JMA_TREND_THRESH_UP,
+		thresh_down=JMA_TREND_THRESH_DOWN
+	)
+	return df
+
+
 def prepare_symbol_dataframe(symbol):
 	df = fetch_data(symbol, TIMEFRAME, LOOKBACK)
 	df = attach_higher_timeframe_trend(df, symbol)
 	df = attach_momentum_filter(df)
+	df = attach_jma_trend_filter(df)
 	return df
 
 
@@ -925,9 +992,17 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 						close_curr = float(df["close"].iloc[i])
 						breakout_allows = close_curr > prev_high if long_mode else close_curr < prev_low
 
-			if long_mode and enter_long and htf_allows and momentum_allows and breakout_allows:
+			jma_trend_allows = True
+			if USE_JMA_TREND_FILTER and "jma_trend_direction" in df.columns:
+				trend_direction = df["jma_trend_direction"].iloc[i]
+				if long_mode:
+					jma_trend_allows = trend_direction == "UP"
+				else:
+					jma_trend_allows = trend_direction == "DOWN"
+
+			if long_mode and enter_long and htf_allows and momentum_allows and breakout_allows and jma_trend_allows:
 				in_position = True
-			elif (not long_mode) and enter_short and htf_allows and momentum_allows and breakout_allows:
+			elif (not long_mode) and enter_short and htf_allows and momentum_allows and breakout_allows and jma_trend_allows:
 				in_position = True
 
 			if in_position:
@@ -1095,7 +1170,15 @@ def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_ba
 							prev_low = float(prev["low"])
 							breakout_allows = close_curr > prev_high if long_mode else close_curr < prev_low
 
-				if htf_allows and momentum_allows and breakout_allows:
+				jma_trend_allows = True
+				if USE_JMA_TREND_FILTER and "jma_trend_direction" in df.columns:
+					trend_direction = curr["jma_trend_direction"]
+					if long_mode:
+						jma_trend_allows = trend_direction == "UP"
+					else:
+						jma_trend_allows = trend_direction == "DOWN"
+
+				if htf_allows and momentum_allows and breakout_allows and jma_trend_allows:
 					in_position = True
 					entry_price = close_curr
 					entry_ts = ts
