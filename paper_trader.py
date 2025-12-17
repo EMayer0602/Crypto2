@@ -1407,6 +1407,11 @@ def generate_summary_html(
 
         # Prepare display DataFrame - ensure numeric columns are actually numeric
         trades_display = trades_df[full_cols].copy()
+
+        # Remove rows where essential columns are NaN (filter out empty rows)
+        if "symbol" in trades_display.columns:
+            trades_display = trades_display[trades_display["symbol"].notna()]
+
         for col in ["entry_price", "exit_price", "stake", "pnl"]:
             if col in trades_display.columns:
                 trades_display[col] = pd.to_numeric(trades_display[col], errors="coerce")
