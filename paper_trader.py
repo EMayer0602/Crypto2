@@ -608,26 +608,47 @@ def _load_trade_log_dataframe(log_path: str) -> pd.DataFrame:
 
     # Remove duplicate columns
     df = df.loc[:, ~df.columns.duplicated()].copy()
-    
+
     print(f"[DEBUG] CSV columns: {list(df.columns)}")
-    if not df.empty:
-        print(f"[DEBUG] First row Symbol='{df.iloc[0].get('Symbol', 'MISSING')}', Indicator='{df.iloc[0].get('Indicator', 'MISSING')}'")
-    
-    # Create new lowercase columns WITHOUT removing originals yet
-    df["symbol"] = df["Symbol"] if "Symbol" in df.columns else ""
-    df["direction"] = df["Direction"].astype(str).str.strip().str.capitalize() if "Direction" in df.columns else ""
-    df["indicator"] = df["Indicator"] if "Indicator" in df.columns else ""
-    df["htf"] = df["HTF"] if "HTF" in df.columns else ""
-    df["param_desc"] = df["ParamDesc"] if "ParamDesc" in df.columns else ""
-    df["entry_time"] = df["EntryTime"] if "EntryTime" in df.columns else ""
-    df["entry_price"] = pd.to_numeric(df["EntryPrice"], errors="coerce") if "EntryPrice" in df.columns else 0.0
-    df["exit_time"] = df["ExitTime"] if "ExitTime" in df.columns else ""
-    df["exit_price"] = pd.to_numeric(df["ExitPrice"], errors="coerce") if "ExitPrice" in df.columns else 0.0
-    df["stake"] = pd.to_numeric(df["Stake"], errors="coerce") if "Stake" in df.columns else 0.0
-    df["fees"] = pd.to_numeric(df["Fees"], errors="coerce") if "Fees" in df.columns else 0.0
-    df["pnl"] = pd.to_numeric(df["PnL"], errors="coerce") if "PnL" in df.columns else 0.0
-    df["equity_after"] = pd.to_numeric(df["EquityAfter"], errors="coerce") if "EquityAfter" in df.columns else 0.0
-    df["reason"] = df["Reason"] if "Reason" in df.columns else ""
+
+    # Helper to check if column has actual data
+    def has_data(col_name):
+        if col_name not in df.columns:
+            return False
+        col = df[col_name]
+        # Check if all values are NaN or empty strings
+        return not (col.isna().all() or (col.astype(str).str.strip() == "").all())
+
+    # Ensure all required lowercase columns exist and have data
+    # Priority: keep existing lowercase data, fallback to Uppercase, else empty
+    if not has_data("symbol"):
+        df["symbol"] = df["Symbol"] if "Symbol" in df.columns else ""
+    if not has_data("direction"):
+        df["direction"] = df["Direction"].astype(str).str.strip().str.capitalize() if "Direction" in df.columns else ""
+    if not has_data("indicator"):
+        df["indicator"] = df["Indicator"] if "Indicator" in df.columns else ""
+    if not has_data("htf"):
+        df["htf"] = df["HTF"] if "HTF" in df.columns else ""
+    if not has_data("param_desc"):
+        df["param_desc"] = df["ParamDesc"] if "ParamDesc" in df.columns else ""
+    if not has_data("entry_time"):
+        df["entry_time"] = df["EntryTime"] if "EntryTime" in df.columns else ""
+    if not has_data("entry_price"):
+        df["entry_price"] = pd.to_numeric(df["EntryPrice"], errors="coerce") if "EntryPrice" in df.columns else 0.0
+    if not has_data("exit_time"):
+        df["exit_time"] = df["ExitTime"] if "ExitTime" in df.columns else ""
+    if not has_data("exit_price"):
+        df["exit_price"] = pd.to_numeric(df["ExitPrice"], errors="coerce") if "ExitPrice" in df.columns else 0.0
+    if not has_data("stake"):
+        df["stake"] = pd.to_numeric(df["Stake"], errors="coerce") if "Stake" in df.columns else 0.0
+    if not has_data("fees"):
+        df["fees"] = pd.to_numeric(df["Fees"], errors="coerce") if "Fees" in df.columns else 0.0
+    if not has_data("pnl"):
+        df["pnl"] = pd.to_numeric(df["PnL"], errors="coerce") if "PnL" in df.columns else 0.0
+    if not has_data("equity_after"):
+        df["equity_after"] = pd.to_numeric(df["EquityAfter"], errors="coerce") if "EquityAfter" in df.columns else 0.0
+    if not has_data("reason"):
+        df["reason"] = df["Reason"] if "Reason" in df.columns else ""
 
     # Drop the original Uppercase columns to avoid duplicates in saved CSV
     uppercase_cols = ["Symbol", "Direction", "Indicator", "HTF", "ParamDesc",
