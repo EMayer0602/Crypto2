@@ -1384,8 +1384,11 @@ def build_summary_payload(
     win_rate = (winners / total_trades * 100.0) if total_trades else 0.0
     open_count = len(open_positions_df)
     open_equity = compute_net_open_equity(open_positions_df)
-    base_capital = float(final_state.get("total_capital", 0.0))
-    marked_capital = base_capital + open_equity
+
+    # Calculate lifetime capital: START_EQUITY + all historical closed PnL + unrealized open equity
+    # This gives accurate total capital across all historical trades
+    lifetime_capital = st.START_EQUITY + pnl_sum + open_equity
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "start": start_ts.isoformat(),
@@ -1398,7 +1401,7 @@ def build_summary_payload(
         "winners": int(winners),
         "losers": int(losers),
         "open_equity": round(open_equity, 6),
-        "final_capital": round(marked_capital, 6),
+        "final_capital": round(lifetime_capital, 6),
     }
 
 
