@@ -110,7 +110,7 @@ MOMENTUM_WINDOW = 14
 RSI_LONG_THRESHOLD = 55
 RSI_SHORT_THRESHOLD = 45
 
-USE_JMA_TREND_FILTER = True
+USE_JMA_TREND_FILTER = False  # Disabled to match overall_best_detailed.html backtest settings
 JMA_TREND_LENGTH = 20  # Length for JMA
 JMA_TREND_PHASE = 0  # Phase for JMA
 JMA_TREND_THRESH_UP = 0.0001  # Positive threshold for uptrend
