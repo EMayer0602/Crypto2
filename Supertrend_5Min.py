@@ -120,6 +120,18 @@ USE_BREAKOUT_FILTER = False
 BREAKOUT_ATR_MULT = 1.5
 BREAKOUT_REQUIRE_DIRECTION = True
 
+# Bull/Bear Trap Filters
+USE_MA_SLOPE_FILTER = True  # Require MA to be rising/falling (not just price above/below)
+MA_SLOPE_PERIOD = 5  # Number of bars to check for MA slope direction
+MA_SLOPE_MIN_CHANGE = 0.0001  # Minimum percentage change required for valid slope
+
+USE_CANDLESTICK_PATTERN_FILTER = True  # Filter out reversal candlestick patterns
+PATTERN_FILTER_SENSITIVITY = "medium"  # "low", "medium", "high" - how strict pattern detection is
+
+USE_DIVERGENCE_FILTER = True  # Detect price/RSI divergence (bull traps)
+DIVERGENCE_LOOKBACK = 10  # How many bars to look back for divergence
+DIVERGENCE_RSI_PERIOD = 14  # RSI period for divergence detection
+
 START_EQUITY = 14000.0
 RISK_FRACTION = 1
 STAKE_DIVISOR = 14
@@ -857,11 +869,181 @@ def attach_jma_trend_filter(df):
 	return df
 
 
+def attach_ma_slope_filter(df, indicator_col="close"):
+	"""
+	Calculate moving average slope to detect if MA is actually rising/falling.
+
+	Prevents entries when price crosses MA but MA is still falling (bull trap) or vice versa.
+	"""
+	df = df.copy()
+	if not USE_MA_SLOPE_FILTER or indicator_col not in df.columns:
+		df["ma_slope_direction"] = "NEUTRAL"
+		df["ma_slope_change_pct"] = 0.0
+		return df
+
+	# Calculate MA slope over the specified period
+	ma_values = df[indicator_col].rolling(MA_SLOPE_PERIOD).mean()
+
+	# Calculate percentage change in MA over the period
+	ma_change = ma_values.pct_change(MA_SLOPE_PERIOD)
+	df["ma_slope_change_pct"] = ma_change
+
+	# Classify slope direction
+	df["ma_slope_direction"] = np.where(
+		ma_change > MA_SLOPE_MIN_CHANGE, "UP",
+		np.where(ma_change < -MA_SLOPE_MIN_CHANGE, "DOWN", "NEUTRAL")
+	)
+
+	return df
+
+
+def detect_candlestick_reversal_pattern(df):
+	"""
+	Detect bearish reversal patterns that signal bull traps:
+	- Shooting Star (long upper wick after uptrend)
+	- Bearish Engulfing (large red candle engulfing previous green)
+	- Evening Star (3-candle reversal)
+	- Dark Cloud Cover (bearish reversal)
+	"""
+	df = df.copy()
+	if not USE_CANDLESTICK_PATTERN_FILTER:
+		df["bearish_reversal"] = False
+		df["bullish_reversal"] = False
+		return df
+
+	# Sensitivity thresholds
+	sensitivity_map = {
+		"low": {"body_ratio": 0.7, "wick_ratio": 2.5},
+		"medium": {"body_ratio": 0.6, "wick_ratio": 2.0},
+		"high": {"body_ratio": 0.5, "wick_ratio": 1.5},
+	}
+	thresholds = sensitivity_map.get(PATTERN_FILTER_SENSITIVITY, sensitivity_map["medium"])
+
+	o = df["open"]
+	h = df["high"]
+	l = df["low"]
+	c = df["close"]
+
+	# Calculate body and wick sizes
+	body = abs(c - o)
+	range_size = h - l
+	upper_wick = h - np.maximum(o, c)
+	lower_wick = np.minimum(o, c) - l
+
+	# Shooting Star: Small body at bottom, long upper wick
+	shooting_star = (
+		(upper_wick > body * thresholds["wick_ratio"]) &
+		(body > 0) &
+		(lower_wick < body * 0.3)
+	)
+
+	# Bearish Engulfing: Current red candle engulfs previous green candle
+	prev_close = c.shift(1)
+	prev_open = o.shift(1)
+	bearish_engulfing = (
+		(prev_close > prev_open) &  # Previous was green
+		(c < o) &  # Current is red
+		(c < prev_open) &  # Current close below previous open
+		(o > prev_close) &  # Current open above previous close
+		(body > body.shift(1) * 1.2)  # Current body larger
+	)
+
+	# Combine patterns
+	df["bearish_reversal"] = shooting_star | bearish_engulfing
+
+	# Bullish reversal patterns (for short entries)
+	hammer = (
+		(lower_wick > body * thresholds["wick_ratio"]) &
+		(body > 0) &
+		(upper_wick < body * 0.3)
+	)
+
+	bullish_engulfing = (
+		(prev_close < prev_open) &  # Previous was red
+		(c > o) &  # Current is green
+		(c > prev_open) &  # Current close above previous open
+		(o < prev_close) &  # Current open below previous close
+		(body > body.shift(1) * 1.2)
+	)
+
+	df["bullish_reversal"] = hammer | bullish_engulfing
+
+	return df
+
+
+def detect_divergence(df):
+	"""
+	Detect price/RSI divergence to identify potential bull/bear traps.
+
+	Bearish divergence: Price makes higher high, RSI makes lower high (bull trap)
+	Bullish divergence: Price makes lower low, RSI makes higher low (bear trap)
+	"""
+	df = df.copy()
+	if not USE_DIVERGENCE_FILTER:
+		df["bearish_divergence"] = False
+		df["bullish_divergence"] = False
+		return df
+
+	# Calculate RSI if not already present
+	if "rsi" not in df.columns:
+		delta = df["close"].diff()
+		gain = np.where(delta > 0, delta, 0.0)
+		loss = np.where(delta < 0, -delta, 0.0)
+		roll_gain = pd.Series(gain, index=df.index).rolling(DIVERGENCE_RSI_PERIOD).mean()
+		roll_loss = pd.Series(loss, index=df.index).rolling(DIVERGENCE_RSI_PERIOD).mean()
+		rs = roll_gain / roll_loss.replace(0, np.nan)
+		df["rsi"] = 100 - (100 / (1 + rs))
+
+	# Find local highs and lows in price and RSI
+	close = df["close"]
+	rsi = df["rsi"]
+
+	# Rolling max/min over lookback period
+	price_high = close.rolling(DIVERGENCE_LOOKBACK, center=True).max()
+	price_low = close.rolling(DIVERGENCE_LOOKBACK, center=True).min()
+	rsi_high = rsi.rolling(DIVERGENCE_LOOKBACK, center=True).max()
+	rsi_low = rsi.rolling(DIVERGENCE_LOOKBACK, center=True).min()
+
+	# Detect peaks/troughs
+	is_price_peak = (close == price_high)
+	is_price_trough = (close == price_low)
+
+	# Bearish divergence: Price making higher highs, RSI making lower highs
+	prev_price_peak = close.where(is_price_peak).ffill()
+	prev_rsi_at_price_peak = rsi.where(is_price_peak).ffill()
+
+	bearish_div = (
+		is_price_peak &
+		(close > prev_price_peak.shift(1)) &
+		(rsi < prev_rsi_at_price_peak.shift(1)) &
+		(rsi > 50)  # Only in overbought territory
+	)
+
+	# Bullish divergence: Price making lower lows, RSI making higher lows
+	prev_price_trough = close.where(is_price_trough).ffill()
+	prev_rsi_at_price_trough = rsi.where(is_price_trough).ffill()
+
+	bullish_div = (
+		is_price_trough &
+		(close < prev_price_trough.shift(1)) &
+		(rsi > prev_rsi_at_price_trough.shift(1)) &
+		(rsi < 50)  # Only in oversold territory
+	)
+
+	df["bearish_divergence"] = bearish_div.fillna(False)
+	df["bullish_divergence"] = bullish_div.fillna(False)
+
+	return df
+
+
 def prepare_symbol_dataframe(symbol):
 	df = fetch_data(symbol, TIMEFRAME, LOOKBACK)
 	df = attach_higher_timeframe_trend(df, symbol)
 	df = attach_momentum_filter(df)
 	df = attach_jma_trend_filter(df)
+	df = attach_ma_slope_filter(df)
+	df = detect_candlestick_reversal_pattern(df)
+	df = detect_divergence(df)
 	return df
 
 
@@ -1011,9 +1193,38 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 				else:
 					jma_trend_allows = trend_direction == "DOWN"
 
-			if long_mode and enter_long and htf_allows and momentum_allows and breakout_allows and jma_trend_allows:
+			# MA Slope Filter: Require MA to be trending in entry direction
+			ma_slope_allows = True
+			if USE_MA_SLOPE_FILTER and "ma_slope_direction" in df.columns:
+				slope_dir = df["ma_slope_direction"].iloc[i]
+				if long_mode:
+					ma_slope_allows = slope_dir == "UP"
+				else:
+					ma_slope_allows = slope_dir == "DOWN"
+
+			# Candlestick Pattern Filter: Avoid reversal patterns
+			pattern_allows = True
+			if USE_CANDLESTICK_PATTERN_FILTER:
+				if long_mode and "bearish_reversal" in df.columns:
+					# Don't enter long if bearish reversal detected
+					pattern_allows = not df["bearish_reversal"].iloc[i]
+				elif not long_mode and "bullish_reversal" in df.columns:
+					# Don't enter short if bullish reversal detected
+					pattern_allows = not df["bullish_reversal"].iloc[i]
+
+			# Divergence Filter: Avoid entries during divergence
+			divergence_allows = True
+			if USE_DIVERGENCE_FILTER:
+				if long_mode and "bearish_divergence" in df.columns:
+					# Don't enter long if bearish divergence (bull trap signal)
+					divergence_allows = not df["bearish_divergence"].iloc[i]
+				elif not long_mode and "bullish_divergence" in df.columns:
+					# Don't enter short if bullish divergence (bear trap signal)
+					divergence_allows = not df["bullish_divergence"].iloc[i]
+
+			if long_mode and enter_long and htf_allows and momentum_allows and breakout_allows and jma_trend_allows and ma_slope_allows and pattern_allows and divergence_allows:
 				in_position = True
-			elif (not long_mode) and enter_short and htf_allows and momentum_allows and breakout_allows and jma_trend_allows:
+			elif (not long_mode) and enter_short and htf_allows and momentum_allows and breakout_allows and jma_trend_allows and ma_slope_allows and pattern_allows and divergence_allows:
 				in_position = True
 
 			if in_position:
@@ -1189,7 +1400,32 @@ def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_ba
 					else:
 						jma_trend_allows = trend_direction == "DOWN"
 
-				if htf_allows and momentum_allows and breakout_allows and jma_trend_allows:
+				# MA Slope Filter
+				ma_slope_allows = True
+				if USE_MA_SLOPE_FILTER and "ma_slope_direction" in df.columns:
+					slope_dir = curr["ma_slope_direction"]
+					if long_mode:
+						ma_slope_allows = slope_dir == "UP"
+					else:
+						ma_slope_allows = slope_dir == "DOWN"
+
+				# Candlestick Pattern Filter
+				pattern_allows = True
+				if USE_CANDLESTICK_PATTERN_FILTER:
+					if long_mode and "bearish_reversal" in df.columns:
+						pattern_allows = not curr["bearish_reversal"]
+					elif not long_mode and "bullish_reversal" in df.columns:
+						pattern_allows = not curr["bullish_reversal"]
+
+				# Divergence Filter
+				divergence_allows = True
+				if USE_DIVERGENCE_FILTER:
+					if long_mode and "bearish_divergence" in df.columns:
+						divergence_allows = not curr["bearish_divergence"]
+					elif not long_mode and "bullish_divergence" in df.columns:
+						divergence_allows = not curr["bullish_divergence"]
+
+				if htf_allows and momentum_allows and breakout_allows and jma_trend_allows and ma_slope_allows and pattern_allows and divergence_allows:
 					in_position = True
 					entry_price = close_curr
 					entry_ts = ts
