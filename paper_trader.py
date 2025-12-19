@@ -1376,6 +1376,7 @@ def build_summary_payload(
     start_ts: pd.Timestamp,
     end_ts: pd.Timestamp,
 ) -> Dict[str, Any]:
+    # Overall statistics
     total_trades = len(trades_df)
     winners = len(trades_df[trades_df["pnl"] > 0]) if not trades_df.empty else 0
     losers = len(trades_df[trades_df["pnl"] < 0]) if not trades_df.empty else 0
@@ -1388,6 +1389,53 @@ def build_summary_payload(
     # Calculate lifetime capital: START_EQUITY + all historical closed PnL + unrealized open equity
     # This gives accurate total capital across all historical trades
     lifetime_capital = st.START_EQUITY + pnl_sum + open_equity
+
+    # Separate statistics for Long and Short
+    def calc_direction_stats(df, direction_name):
+        if "direction" not in df.columns or df.empty:
+            return {}
+        dir_df = df[df["direction"].str.lower() == direction_name.lower()]
+        if dir_df.empty:
+            return {
+                f"{direction_name}_trades": 0,
+                f"{direction_name}_pnl": 0.0,
+                f"{direction_name}_avg_pnl": 0.0,
+                f"{direction_name}_win_rate": 0.0,
+                f"{direction_name}_winners": 0,
+                f"{direction_name}_losers": 0,
+            }
+        count = len(dir_df)
+        wins = len(dir_df[dir_df["pnl"] > 0])
+        losses = len(dir_df[dir_df["pnl"] < 0])
+        pnl = float(dir_df["pnl"].sum())
+        avg = float(dir_df["pnl"].mean())
+        wr = (wins / count * 100.0) if count else 0.0
+        return {
+            f"{direction_name}_trades": int(count),
+            f"{direction_name}_pnl": round(pnl, 6),
+            f"{direction_name}_avg_pnl": round(avg, 6),
+            f"{direction_name}_win_rate": round(wr, 4),
+            f"{direction_name}_winners": int(wins),
+            f"{direction_name}_losers": int(losses),
+        }
+
+    long_stats = calc_direction_stats(trades_df, "long")
+    short_stats = calc_direction_stats(trades_df, "short")
+
+    # Open position stats by direction
+    def calc_open_direction_stats(df, direction_name):
+        if "direction" not in df.columns or df.empty:
+            return {f"{direction_name}_open": 0, f"{direction_name}_open_equity": 0.0}
+        dir_df = df[df["direction"].str.lower() == direction_name.lower()]
+        count = len(dir_df)
+        equity = compute_net_open_equity(dir_df)
+        return {
+            f"{direction_name}_open": int(count),
+            f"{direction_name}_open_equity": round(equity, 6),
+        }
+
+    long_open_stats = calc_open_direction_stats(open_positions_df, "long")
+    short_open_stats = calc_open_direction_stats(open_positions_df, "short")
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1402,6 +1450,10 @@ def build_summary_payload(
         "losers": int(losers),
         "open_equity": round(open_equity, 6),
         "final_capital": round(lifetime_capital, 6),
+        **long_stats,
+        **short_stats,
+        **long_open_stats,
+        **short_open_stats,
     }
 
 
@@ -1414,9 +1466,12 @@ def generate_summary_html(
     html_parts = [
         "<html><head><meta charset='utf-8'>",
         "<title>Paper Trading Simulation Summary</title>",
-        "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;margin-top:12px;width:auto;}th,td{border:1px solid #ccc;padding:6px 10px;text-align:right;}th{text-align:center;background:#f0f0f0;font-weight:bold;}td:first-child{text-align:left;}h1{margin-bottom:10px;}h2{margin-top:30px;margin-bottom:10px;}</style>",
+        "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;margin-top:12px;width:auto;}th,td{border:1px solid #ccc;padding:6px 10px;text-align:right;}th{text-align:center;background:#f0f0f0;font-weight:bold;}td:first-child{text-align:left;}h1{margin-bottom:10px;}h2{margin-top:30px;margin-bottom:10px;}.stats-container{display:flex;gap:20px;flex-wrap:wrap;}</style>",
         "</head><body>",
         f"<h1>Simulation Summary {summary['start']} → {summary['end']}</h1>",
+
+        # Overall Summary
+        "<h2>Overall Statistics</h2>",
         "<table>",
         "<tr><th>Metric</th><th>Value</th></tr>",
         f"<tr><td>Closed trades</td><td>{summary['closed_trades']}</td></tr>",
@@ -1429,6 +1484,33 @@ def generate_summary_html(
         f"<tr><td>Open equity (net)</td><td>{summary['open_equity']:.2f}</td></tr>",
         f"<tr><td>Final capital (USDT)</td><td>{summary['final_capital']:.2f}</td></tr>",
         "</table>",
+
+        # Long/Short Statistics side by side
+        "<h2>Statistics by Direction</h2>",
+        "<div class='stats-container'>",
+        "<table>",
+        "<tr><th colspan='2'>Long Statistics</th></tr>",
+        f"<tr><td>Closed trades</td><td>{summary.get('long_trades', 0)}</td></tr>",
+        f"<tr><td>PnL (USDT)</td><td>{summary.get('long_pnl', 0):.2f}</td></tr>",
+        f"<tr><td>Avg PnL (USDT)</td><td>{summary.get('long_avg_pnl', 0):.2f}</td></tr>",
+        f"<tr><td>Win rate (%)</td><td>{summary.get('long_win_rate', 0):.2f}</td></tr>",
+        f"<tr><td>Winners</td><td>{summary.get('long_winners', 0)}</td></tr>",
+        f"<tr><td>Losers</td><td>{summary.get('long_losers', 0)}</td></tr>",
+        f"<tr><td>Open positions</td><td>{summary.get('long_open', 0)}</td></tr>",
+        f"<tr><td>Open equity (USDT)</td><td>{summary.get('long_open_equity', 0):.2f}</td></tr>",
+        "</table>",
+        "<table>",
+        "<tr><th colspan='2'>Short Statistics</th></tr>",
+        f"<tr><td>Closed trades</td><td>{summary.get('short_trades', 0)}</td></tr>",
+        f"<tr><td>PnL (USDT)</td><td>{summary.get('short_pnl', 0):.2f}</td></tr>",
+        f"<tr><td>Avg PnL (USDT)</td><td>{summary.get('short_avg_pnl', 0):.2f}</td></tr>",
+        f"<tr><td>Win rate (%)</td><td>{summary.get('short_win_rate', 0):.2f}</td></tr>",
+        f"<tr><td>Winners</td><td>{summary.get('short_winners', 0)}</td></tr>",
+        f"<tr><td>Losers</td><td>{summary.get('short_losers', 0)}</td></tr>",
+        f"<tr><td>Open positions</td><td>{summary.get('short_open', 0)}</td></tr>",
+        f"<tr><td>Open equity (USDT)</td><td>{summary.get('short_open_equity', 0):.2f}</td></tr>",
+        "</table>",
+        "</div>",
     ]
 
     if not trades_df.empty:
@@ -1479,8 +1561,6 @@ def generate_summary_html(
             html_parts.append(trades_display.to_html(index=False, escape=False, formatters=formatters))
 
     if not open_positions_df.empty:
-        html_parts.append("<h2>Open positions</h2>")
-
         # Prepare display DataFrame - ensure numeric columns are actually numeric
         open_display = open_positions_df.copy()
 
@@ -1526,7 +1606,26 @@ def generate_summary_html(
             if col in open_display.columns:
                 formatters[col] = make_int_formatter()
 
-        html_parts.append(open_display.to_html(index=False, escape=False, formatters=formatters))
+        # Separate Long and Short open positions
+        if "direction" in open_display.columns:
+            long_open = open_display[open_display["direction"].str.lower() == "long"].copy()
+            short_open = open_display[open_display["direction"].str.lower() == "short"].copy()
+
+            # Display Long Open Positions
+            if not long_open.empty:
+                long_equity = compute_net_open_equity(long_open)
+                html_parts.append(f"<h2>Long Open Positions ({len(long_open)} positions, Equity: {long_equity:.2f} USDT)</h2>")
+                html_parts.append(long_open.to_html(index=False, escape=False, formatters=formatters))
+
+            # Display Short Open Positions
+            if not short_open.empty:
+                short_equity = compute_net_open_equity(short_open)
+                html_parts.append(f"<h2>Short Open Positions ({len(short_open)} positions, Equity: {short_equity:.2f} USDT)</h2>")
+                html_parts.append(short_open.to_html(index=False, escape=False, formatters=formatters))
+        else:
+            # Fallback if no direction column
+            html_parts.append("<h2>Open positions</h2>")
+            html_parts.append(open_display.to_html(index=False, escape=False, formatters=formatters))
 
     html_parts.append("</body></html>")
 
