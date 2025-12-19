@@ -1,49 +1,61 @@
 """
-Default optimal hold times based on peak profit analysis insights.
+Optimal hold times based on peak profit analysis of 115 real trades.
 
-Analysis results (from previous analyze_peak_profit.py runs):
-- Overall: Peak occurs at ~65% of trade duration
-- Long trades: Left 2,920 USDT on table (22,733% giveback rate) - need TIGHT exits
-- Short trades: Left 6,491 USDT on table (486% giveback rate) - also need early exits
+Analysis results:
+- Long trades: Avg optimal 5 bars (saves 59.82 USDT/trade, total 1,196 USDT)
+- Short trades: Avg optimal 3 bars (saves 43.63 USDT/trade, total 4,145 USDT)
+- Total potential savings: 5,340 USDT
 
-These defaults can be customized once we run full peak analysis per symbol.
+Key insight: Peaks occur MUCH earlier than expected (2-10 bars vs 12-15)!
 """
 
-# Default optimal hold times in bars
+# Optimal hold times from real data analysis (115 trades)
 # Format: (symbol, direction) -> bars
 OPTIMAL_HOLD_BARS = {
-    # Conservative defaults for all symbols
-    # Long trades: 10-12 bars (tighter due to high giveback)
-    # Short trades: 15-18 bars (slightly more room)
+    # Real data from find_optimal_hold_times.py analysis
 
-    # EUR pairs (typical 6h-8h timeframes)
-    ("BTC/EUR", "long"): 10,
-    ("BTC/EUR", "short"): 15,
-    ("ETH/EUR", "long"): 10,
-    ("ETH/EUR", "short"): 15,
-    ("SOL/EUR", "long"): 12,
-    ("SOL/EUR", "short"): 15,
-    ("SUI/EUR", "long"): 12,
-    ("SUI/EUR", "short"): 15,
-    ("LINK/EUR", "long"): 10,
-    ("LINK/EUR", "short"): 15,
-    ("XRP/EUR", "long"): 10,
-    ("XRP/EUR", "short"): 15,
+    # BTC/EUR
+    ("BTC/EUR", "short"): 5,   # Peak at 73%, saves 22.94 USDT/trade
 
-    # USDT/USDC pairs
-    ("LUNC/USDT", "long"): 12,
-    ("LUNC/USDT", "short"): 15,
-    ("TNSR/USDC", "long"): 12,
-    ("TNSR/USDC", "short"): 15,
-    ("ZEC/USDC", "long"): 12,
-    ("ZEC/USDC", "short"): 15,
+    # ETH/EUR
+    ("ETH/EUR", "long"): 10,   # Peak at 91%, saves 52.90 USDT/trade
+    ("ETH/EUR", "short"): 2,   # Peak at 51%, saves 27.75 USDT/trade
+
+    # LINK/EUR
+    ("LINK/EUR", "long"): 3,   # Peak at 53%, saves 35.94 USDT/trade
+    ("LINK/EUR", "short"): 2,  # Peak at 53%, saves 24.93 USDT/trade
+
+    # LUNC/USDT
+    ("LUNC/USDT", "long"): 7,  # Peak at 70%, saves 72.58 USDT/trade
+    ("LUNC/USDT", "short"): 2, # Peak at 41%, saves 70.75 USDT/trade (was 2.5, rounded to 2)
+
+    # SOL/EUR
+    ("SOL/EUR", "long"): 3,    # Peak at 51%, saves 39.67 USDT/trade
+    ("SOL/EUR", "short"): 2,   # Peak at 37%, saves 44.10 USDT/trade (was 2.5, rounded to 2)
+
+    # SUI/EUR
+    ("SUI/EUR", "long"): 9,    # Peak at 53%, saves 65.42 USDT/trade
+    ("SUI/EUR", "short"): 2,   # Peak at 61%, saves 26.04 USDT/trade
+
+    # TNSR/USDC
+    ("TNSR/USDC", "long"): 2,  # Peak at 46%, saves 98.40 USDT/trade
+    ("TNSR/USDC", "short"): 2, # Peak at 36%, saves 51.72 USDT/trade
+
+    # XRP/EUR
+    ("XRP/EUR", "short"): 2,   # Peak at 53%, saves 27.10 USDT/trade (was 2.5, rounded to 2)
+
+    # ZEC/USDC
+    ("ZEC/USDC", "long"): 2,   # Peak at 29%, saves 53.83 USDT/trade
+    ("ZEC/USDC", "short"): 4,  # Peak at 31%, saves 97.30 USDT/trade
 }
 
 def get_optimal_hold_bars(symbol: str, direction: str) -> int:
     """
-    Get optimal hold time for symbol/direction.
+    Get optimal hold time for symbol/direction based on real data.
 
-    Returns default of 12 bars for longs, 15 for shorts if not found.
+    Returns conservative defaults if symbol/direction not found:
+    - Long: 5 bars (from analysis average)
+    - Short: 3 bars (from analysis average)
     """
     direction = direction.lower()
     key = (symbol, direction)
@@ -51,5 +63,5 @@ def get_optimal_hold_bars(symbol: str, direction: str) -> int:
     if key in OPTIMAL_HOLD_BARS:
         return OPTIMAL_HOLD_BARS[key]
 
-    # Fallback defaults
-    return 12 if direction == "long" else 15
+    # Fallback to analysis averages
+    return 5 if direction == "long" else 3
