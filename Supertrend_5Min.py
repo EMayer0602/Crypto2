@@ -139,6 +139,20 @@ FEE_RATE = 0.001
 ATR_WINDOW = 14
 ATR_STOP_MULTS = [None, 1.0, 1.5, 2.0]
 
+# Advanced Exit Strategies - Based on Peak Profit Analysis
+USE_TRAILING_STOP = True  # Enable trailing stop after peak
+TRAILING_STOP_PCT = 0.05  # 5% drawdown from peak triggers exit
+TRAILING_STOP_ACTIVATION_PCT = 0.02  # Activate after 2% profit
+
+USE_PARTIAL_EXIT = True  # Take partial profits at targets
+PARTIAL_EXIT_LEVELS = [
+    {"profit_pct": 0.03, "exit_pct": 0.30},  # At +3%, sell 30%
+    {"profit_pct": 0.05, "exit_pct": 0.30},  # At +5%, sell another 30%
+]
+
+USE_PROFIT_TARGET = True  # Full exit at profit target
+PROFIT_TARGET_PCT = 0.10  # 10% profit = full exit
+
 BASE_OUT_DIR = "report_html"
 BARS_PER_DAY = max(1, int(1440 / timeframe_to_minutes(TIMEFRAME)))
 CLEAR_BASE_OUTPUT_ON_SWEEP = True
@@ -1234,19 +1248,103 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 				atr_val = df["atr"].iloc[i]
 				entry_atr = float(atr_val) if not np.isnan(atr_val) else 0.0
 				bars_in_position = 0
+				# Initialize exit strategy tracking
+				highest_price = entry_price if long_mode else entry_price
+				lowest_price = entry_price if not long_mode else entry_price
+				remaining_position = 1.0  # 100% of position
+				partial_exits_taken = []  # Track which partial exit levels hit
 			continue
 
 		bars_in_position += 1
 		stake = entry_capital if entry_capital is not None else equity / STAKE_DIVISOR
+		current_stake = stake * remaining_position
 		atr_buffer = entry_atr if entry_atr is not None else 0.0
 		stop_price = None
 		if atr_stop_mult is not None and atr_buffer and atr_buffer > 0:
 			stop_price = entry_price - atr_stop_mult * atr_buffer if long_mode else entry_price + atr_stop_mult * atr_buffer
 
+		# Track peak price for trailing stop
+		current_price = float(df["close"].iloc[i])
+		current_high = float(df["high"].iloc[i])
+		current_low = float(df["low"].iloc[i])
+
+		if long_mode:
+			highest_price = max(highest_price, current_high)
+		else:
+			lowest_price = min(lowest_price, current_low)
+
 		exit_price = None
 		exit_reason = None
+		partial_exit_amount = 0.0
 
-		if stop_price is not None:
+		# Advanced Exit Strategies (checked BEFORE traditional exits)
+
+		# 1. PROFIT TARGET - Full exit at target
+		if USE_PROFIT_TARGET and exit_price is None:
+			profit_pct = (current_price - entry_price) / entry_price if long_mode else (entry_price - current_price) / entry_price
+			if profit_pct >= PROFIT_TARGET_PCT:
+				exit_price = current_price
+				exit_reason = f"Profit target {PROFIT_TARGET_PCT*100:.1f}%"
+
+		# 2. PARTIAL EXITS at profit levels
+		if USE_PARTIAL_EXIT and remaining_position > 0.4 and exit_price is None:
+			profit_pct = (current_price - entry_price) / entry_price if long_mode else (entry_price - current_price) / entry_price
+			for level_idx, level in enumerate(PARTIAL_EXIT_LEVELS):
+				if level_idx not in partial_exits_taken and profit_pct >= level["profit_pct"]:
+					# Take partial exit
+					exit_amount = level["exit_pct"]
+					partial_exit_amount = exit_amount
+					remaining_position -= exit_amount
+					partial_exits_taken.append(level_idx)
+					# Record partial exit as separate trade
+					price_diff = current_price - entry_price if long_mode else entry_price - current_price
+					partial_stake = stake * exit_amount
+					gross_pnl = price_diff / entry_price * partial_stake
+					fees = partial_stake * FEE_RATE * 2.0
+					pnl_usd = gross_pnl - fees
+					equity += pnl_usd
+					trades.append({
+						"Zeit": entry_ts,
+						"Entry": entry_price,
+						"ExitZeit": ts,
+						"ExitPreis": current_price,
+						"Stake": partial_stake,
+						"Fees": fees,
+						"ExitReason": f"Partial exit {level['profit_pct']*100:.0f}% ({exit_amount*100:.0f}%)",
+						"PnL (USD)": pnl_usd,
+						"Equity": equity,
+						"Direction": direction.capitalize(),
+						"MinHoldBars": min_hold_bars
+					})
+					if remaining_position <= 0.01:  # Essentially fully exited
+						in_position = False
+						entry_capital = None
+						entry_atr = None
+						bars_in_position = 0
+						continue
+					break
+
+		# 3. TRAILING STOP - Exit on drawdown from peak
+		if USE_TRAILING_STOP and exit_price is None:
+			profit_pct = (current_price - entry_price) / entry_price if long_mode else (entry_price - current_price) / entry_price
+
+			# Only activate trailing stop after minimum profit reached
+			if profit_pct >= TRAILING_STOP_ACTIVATION_PCT:
+				if long_mode:
+					# Check drawdown from highest price
+					drawdown_from_peak = (highest_price - current_low) / highest_price
+					if drawdown_from_peak >= TRAILING_STOP_PCT:
+						exit_price = current_price
+						exit_reason = f"Trailing stop {TRAILING_STOP_PCT*100:.1f}%"
+				else:
+					# Short: check rise from lowest price
+					rise_from_trough = (current_high - lowest_price) / lowest_price
+					if rise_from_trough >= TRAILING_STOP_PCT:
+						exit_price = current_price
+						exit_reason = f"Trailing stop {TRAILING_STOP_PCT*100:.1f}%"
+
+		# Traditional exits (ATR stop, Trend flip) - only if no advanced exit triggered
+		if stop_price is not None and exit_price is None:
 			if long_mode and float(df["low"].iloc[i]) <= stop_price:
 				exit_price = stop_price
 				exit_reason = "ATR stop"
@@ -1265,9 +1363,10 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 		if exit_price is None:
 			continue
 
+		# Calculate PnL for remaining position
 		price_diff = exit_price - entry_price if long_mode else entry_price - exit_price
-		gross_pnl = price_diff / entry_price * stake
-		fees = stake * FEE_RATE * 2.0
+		gross_pnl = price_diff / entry_price * current_stake
+		fees = current_stake * FEE_RATE * 2.0
 		pnl_usd = gross_pnl - fees
 		equity += pnl_usd
 		trades.append({
@@ -1275,7 +1374,7 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 			"Entry": entry_price,
 			"ExitZeit": ts,
 			"ExitPreis": exit_price,
-			"Stake": stake,
+			"Stake": current_stake,
 			"Fees": fees,
 			"ExitReason": exit_reason,
 			"PnL (USD)": pnl_usd,
@@ -1433,20 +1532,93 @@ def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_ba
 					atr_val = curr["atr"]
 					entry_atr = float(atr_val) if not np.isnan(atr_val) else 0.0
 					bars_in_position = 0
+					# Initialize exit strategy tracking
+					highest_price = entry_price if long_mode else entry_price
+					lowest_price = entry_price if not long_mode else entry_price
+					remaining_position = 1.0
+					partial_exits_taken = []
 			continue
 
 		bars_in_position += 1
 		stake = entry_capital if entry_capital is not None else equity / STAKE_DIVISOR
+		current_stake = stake * remaining_position
 		atr_buffer = entry_atr if entry_atr is not None else 0.0
 		stop_price = None
 		if atr_stop_mult is not None and atr_buffer and atr_buffer > 0:
 			stop_price = entry_price - atr_stop_mult * atr_buffer if long_mode else entry_price + atr_stop_mult * atr_buffer
 
+		# Track peak for trailing stop
+		if long_mode:
+			highest_price = max(highest_price, float(curr["high"]))
+		else:
+			lowest_price = min(lowest_price, float(curr["low"]))
+
 		exit_price = None
 		exit_reason = None
+		partial_exit_amount = 0.0
 
+		# Advanced Exit Strategies
+		# 1. PROFIT TARGET
+		if USE_PROFIT_TARGET and exit_price is None:
+			profit_pct = (close_curr - entry_price) / entry_price if long_mode else (entry_price - close_curr) / entry_price
+			if profit_pct >= PROFIT_TARGET_PCT:
+				exit_price = close_curr
+				exit_reason = f"Profit target {PROFIT_TARGET_PCT*100:.1f}%"
+
+		# 2. PARTIAL EXITS
+		if USE_PARTIAL_EXIT and remaining_position > 0.4 and exit_price is None:
+			profit_pct = (close_curr - entry_price) / entry_price if long_mode else (entry_price - close_curr) / entry_price
+			for level_idx, level in enumerate(PARTIAL_EXIT_LEVELS):
+				if level_idx not in partial_exits_taken and profit_pct >= level["profit_pct"]:
+					exit_amount = level["exit_pct"]
+					partial_exit_amount = exit_amount
+					remaining_position -= exit_amount
+					partial_exits_taken.append(level_idx)
+					price_diff = close_curr - entry_price if long_mode else entry_price - close_curr
+					partial_stake = stake * exit_amount
+					gross_pnl = price_diff / entry_price * partial_stake
+					fees = partial_stake * FEE_RATE * 2.0
+					pnl_usd = gross_pnl - fees
+					equity += pnl_usd
+					trades.append({
+						"Zeit": entry_ts,
+						"Entry": entry_price,
+						"ExitZeit": ts,
+						"ExitPreis": close_curr,
+						"Stake": partial_stake,
+						"Fees": fees,
+						"ExitReason": f"Partial exit {level['profit_pct']*100:.0f}% ({exit_amount*100:.0f}%)",
+						"PnL (USD)": pnl_usd,
+						"Equity": equity,
+						"Direction": direction.capitalize(),
+						"MinHoldBars": min_hold_bars
+					})
+					if remaining_position <= 0.01:
+						in_position = False
+						entry_capital = None
+						entry_atr = None
+						bars_in_position = 0
+						continue
+					break
+
+		# 3. TRAILING STOP
+		if USE_TRAILING_STOP and exit_price is None:
+			profit_pct = (close_curr - entry_price) / entry_price if long_mode else (entry_price - close_curr) / entry_price
+			if profit_pct >= TRAILING_STOP_ACTIVATION_PCT:
+				if long_mode:
+					drawdown_from_peak = (highest_price - float(curr["low"])) / highest_price
+					if drawdown_from_peak >= TRAILING_STOP_PCT:
+						exit_price = close_curr
+						exit_reason = f"Trailing stop {TRAILING_STOP_PCT*100:.1f}%"
+				else:
+					rise_from_trough = (float(curr["high"]) - lowest_price) / lowest_price
+					if rise_from_trough >= TRAILING_STOP_PCT:
+						exit_price = close_curr
+						exit_reason = f"Trailing stop {TRAILING_STOP_PCT*100:.1f}%"
+
+		# Traditional exits - only if no advanced exit triggered
 		# ATR stop has priority
-		if stop_price is not None:
+		if stop_price is not None and exit_price is None:
 			if long_mode and float(curr["low"]) <= stop_price:
 				exit_price = stop_price
 				exit_reason = "ATR stop"
@@ -1470,9 +1642,10 @@ def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_ba
 		if exit_price is None:
 			continue
 
+		# Calculate PnL for remaining position
 		price_diff = exit_price - entry_price if long_mode else entry_price - exit_price
-		gross_pnl = price_diff / entry_price * stake
-		fees = stake * FEE_RATE * 2.0
+		gross_pnl = price_diff / entry_price * current_stake
+		fees = current_stake * FEE_RATE * 2.0
 		pnl_usd = gross_pnl - fees
 		equity += pnl_usd
 		trades.append({
@@ -1480,7 +1653,7 @@ def backtest_htf_crossover(df, atr_stop_mult=None, direction="long", min_hold_ba
 			"Entry": entry_price,
 			"ExitZeit": ts,
 			"ExitPreis": exit_price,
-			"Stake": stake,
+			"Stake": current_stake,
 			"Fees": fees,
 			"ExitReason": exit_reason,
 			"PnL (USD)": pnl_usd,
