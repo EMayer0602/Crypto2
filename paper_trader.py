@@ -1432,7 +1432,6 @@ def generate_summary_html(
     ]
 
     if not trades_df.empty:
-        html_parts.append("<h2>Complete Closed Trades (with Entry and Exit)</h2>")
         full_cols = [c for c in [
             "symbol","direction","indicator","htf","entry_time","entry_price","exit_time","exit_price","stake","pnl","reason"
         ] if c in trades_df.columns]
@@ -1458,7 +1457,26 @@ def generate_summary_html(
             if col in trades_display.columns:
                 formatters[col] = make_formatter(8)
 
-        html_parts.append(trades_display.to_html(index=False, escape=False, formatters=formatters))
+        # Separate Long and Short trades
+        if "direction" in trades_display.columns:
+            long_trades = trades_display[trades_display["direction"].str.lower() == "long"].copy()
+            short_trades = trades_display[trades_display["direction"].str.lower() == "short"].copy()
+
+            # Display Long Trades
+            if not long_trades.empty:
+                long_pnl = long_trades["pnl"].sum() if "pnl" in long_trades.columns else 0
+                html_parts.append(f"<h2>Long Trades ({len(long_trades)} trades, PnL: {long_pnl:.2f} USDT)</h2>")
+                html_parts.append(long_trades.to_html(index=False, escape=False, formatters=formatters))
+
+            # Display Short Trades
+            if not short_trades.empty:
+                short_pnl = short_trades["pnl"].sum() if "pnl" in short_trades.columns else 0
+                html_parts.append(f"<h2>Short Trades ({len(short_trades)} trades, PnL: {short_pnl:.2f} USDT)</h2>")
+                html_parts.append(short_trades.to_html(index=False, escape=False, formatters=formatters))
+        else:
+            # Fallback if no direction column
+            html_parts.append("<h2>Complete Closed Trades (with Entry and Exit)</h2>")
+            html_parts.append(trades_display.to_html(index=False, escape=False, formatters=formatters))
 
     if not open_positions_df.empty:
         html_parts.append("<h2>Open positions</h2>")
