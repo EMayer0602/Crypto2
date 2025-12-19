@@ -1,60 +1,54 @@
 """
-Local Configuration Override Template
+Local Configuration Override Template - BACKTEST MATCHING VERSION
 
-Copy this file to 'config_local.py' and modify the values you want to override.
-The config_local.py file is gitignored and won't cause conflicts.
+Copy this file to 'config_local.py' to test with identical settings as overall_best_detailed.html
 
 Example usage:
 1. Copy: cp config_local.example.py config_local.py
-2. Edit config_local.py with your test settings
-3. Run your scripts normally - they'll use your local settings
+2. Run: python paper_trader.py --test
+3. Check: paper_trading_simulation_summary.html
 
-Only include variables you want to override - leave the rest commented out.
+CRITICAL SETTINGS FOR BACKTEST MATCH:
+- USE_JMA_TREND_FILTER must be False
+- ENABLE_SHORTS must be True
+- Use timeframe format: "5m", "1h", "4h" (NOT "5min", "1hour")
 """
 
 # ============================================================================
-# SYMBOLS AND TESTING
+# PAPER TRADING SETTINGS
 # ============================================================================
-# SYMBOLS = ["BTC/USDT", "ETH/USDT"]
-# ACTIVE_INDICATORS = ["jma", "kama"]
+PAPER_TRADING_MODE = True
+LIVE_TRADING_SYMBOLS = ["BTC/USDC", "ETH/USDC", "SOL/USDC", "BNB/USDC", "XRP/USDC",
+                        "ADA/USDC", "AVAX/USDC", "DOGE/USDC", "DOT/USDC", "MATIC/USDC",
+                        "LINK/USDC", "UNI/USDC", "ATOM/USDC", "LTC/USDC", "ETC/USDC",
+                        "FIL/USDC", "NEAR/USDC", "APT/USDC", "ARB/USDC", "OP/USDC"]
+LIVE_TRADING_TIMEFRAME = "5m"  # Use "5m", "1h", "4h" format (NOT "5min", "1hour")
+LIVE_TRADING_INTERVAL_SECONDS = 300  # 5 minutes
 
 # ============================================================================
-# TIMEFRAME SETTINGS
+# HISTORICAL DATA
 # ============================================================================
-# TIMEFRAME = "1h"
-# BARS_PER_DAY = 24  # Adjust based on timeframe: 5min=288, 15min=96, 1h=24
+LOOKBACK = 1000  # Fetch enough historical data for testing
 
 # ============================================================================
-# FILTERS (Enable/Disable)
+# TRADING DIRECTION (BACKTEST MATCH)
 # ============================================================================
-# USE_HIGHER_TIMEFRAME_FILTER = False
-# USE_MOMENTUM_FILTER = False
-# USE_JMA_TREND_FILTER = False
-# USE_MIN_HOLD_FILTER = False
-# USE_BREAKOUT_FILTER = False
+ENABLE_LONGS = True
+ENABLE_SHORTS = True  # CRITICAL: Must be True for both long and short trades
 
 # ============================================================================
-# JMA TREND FILTER SETTINGS
+# FILTERS (BACKTEST MATCH - overall_best_detailed.html)
 # ============================================================================
-# JMA_TREND_LENGTH = 30
-# JMA_TREND_PHASE = 0
-# JMA_TREND_THRESH_UP = 0.0002
-# JMA_TREND_THRESH_DOWN = -0.0002
+USE_MIN_HOLD_FILTER = True
+USE_HIGHER_TIMEFRAME_FILTER = True
+USE_MOMENTUM_FILTER = False
+USE_JMA_TREND_FILTER = False  # CRITICAL: Must be False to match backtest
+USE_BREAKOUT_FILTER = False
 
 # ============================================================================
-# CAPITAL SETTINGS
+# CAPITAL SETTINGS (BACKTEST MATCH)
 # ============================================================================
-# START_EQUITY = 10000.0
-# STAKE_DIVISOR = 10
-
-# ============================================================================
-# BACKTEST PARAMETERS
-# ============================================================================
-# MIN_HOLD_BAR_VALUES = [0, 12, 24, 48]
-# ATR_STOP_MULTS = [None, 1.0, 1.5, 2.0, 2.5]
-
-# ============================================================================
-# HIGHER TIMEFRAME SETTINGS
-# ============================================================================
-# HTF_FACTOR = 3.0
-# HTF_LENGTH = 14
+START_EQUITY = 14000.0
+RISK_FRACTION = 1
+STAKE_DIVISOR = 14
+FEE_RATE = 0.001
