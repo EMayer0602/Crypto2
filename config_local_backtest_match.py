@@ -61,6 +61,11 @@ STAKE_DIVISOR = 14
 FEE_RATE = 0.001
 
 # ============================================================================
+# EXIT STRATEGY - TIME-BASED EXITS
+# ============================================================================
+USE_TIME_BASED_EXIT = True  # Enable time-based exits based on peak profit analysis
+
+# ============================================================================
 # IMPORTANT NOTES
 # ============================================================================
 # 1. Short trades use EUR pairs (BTC/EUR, ETH/EUR, etc.)

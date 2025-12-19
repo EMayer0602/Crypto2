@@ -31,6 +31,14 @@ except ImportError:  # Twilio is optional; SMS alerts require pip install twilio
 
 import Supertrend_5Min as st
 
+# Import optimal hold times configuration
+try:
+    from optimal_hold_times_defaults import get_optimal_hold_bars
+except ImportError:
+    # Fallback if file not found
+    def get_optimal_hold_bars(symbol: str, direction: str) -> int:
+        return 12 if direction.lower() == "long" else 15
+
 CONFIG_FILE = "paper_trading_config.csv"
 STATE_FILE = "paper_trading_state.json"
 TRADE_LOG_FILE = "paper_trading_log.csv"
@@ -50,6 +58,7 @@ DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.str
 DEFAULT_FIXED_STAKE = 2000.0  # Fixed stake per trade
 DEFAULT_ALLOWED_DIRECTIONS = ["long", "short"]  # Enable both long and short trades
 DEFAULT_USE_TESTNET = True
+USE_TIME_BASED_EXIT = True  # Enable time-based exits based on optimal hold times
 SIGNAL_DEBUG = False
 DEFAULT_SIGNAL_INTERVAL_MIN = 15
 DEFAULT_SPIKE_INTERVAL_MIN = 5
@@ -1011,6 +1020,25 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
         if hit_stop:
             exit_price = stop_price
             reason = f"ATR stop x{atr_mult:.2f}"
+
+    # Time-based exit: Exit after optimal hold time based on peak profit analysis
+    # Analysis showed peak profit occurs at ~65% of trade duration on average
+    # Long trades especially need tighter exits (gave back 22,733% on average)
+    if USE_TIME_BASED_EXIT and exit_price is None:
+        # Get symbol-specific optimal hold time from configuration
+        symbol = position.get("symbol", "")
+        direction_str = "long" if long_mode else "short"
+        optimal_hold_bars = get_optimal_hold_bars(symbol, direction_str)
+
+        # Check if we've reached optimal hold time AND have some profit
+        if bars_held >= optimal_hold_bars:
+            current_price = float(curr["close"])
+            unrealized_pnl_pct = ((current_price - entry_price) / entry_price) if long_mode else ((entry_price - current_price) / entry_price)
+
+            # Exit if we have profit (or close to breakeven within 1%)
+            if unrealized_pnl_pct >= -0.01:  # -1% or better
+                exit_price = current_price
+                reason = f"Time-based exit ({bars_held} bars, optimal={optimal_hold_bars})"
 
     trend_curr = int(curr["trend_flag"])
     trend_prev = int(prev["trend_flag"])

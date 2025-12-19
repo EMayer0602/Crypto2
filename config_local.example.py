@@ -52,3 +52,8 @@ START_EQUITY = 14000.0
 RISK_FRACTION = 1
 STAKE_DIVISOR = 14
 FEE_RATE = 0.001
+
+# ============================================================================
+# EXIT STRATEGY - TIME-BASED EXITS
+# ============================================================================
+USE_TIME_BASED_EXIT = True  # Enable time-based exits based on peak profit analysis
