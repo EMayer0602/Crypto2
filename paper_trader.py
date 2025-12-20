@@ -906,12 +906,33 @@ def remove_position(state: Dict, key: str) -> None:
     state["positions"] = [pos for pos in state["positions"] if pos["key"] != key]
 
 
-def bars_in_position(entry_iso: str, latest_ts: pd.Timestamp) -> int:
+def bars_in_position(entry_iso: str, latest_ts: pd.Timestamp, htf_timeframe: Optional[str] = None) -> int:
+    """
+    Calculate number of bars held in position.
+
+    Args:
+        entry_iso: ISO timestamp of entry
+        latest_ts: Current timestamp
+        htf_timeframe: Higher timeframe (e.g. '6h', '24h'). If None, uses BASE_BAR_MINUTES.
+
+    Returns:
+        Number of bars held in the position's timeframe
+    """
     entry_ts = pd.Timestamp(entry_iso)
     delta_minutes = max(0.0, (latest_ts - entry_ts).total_seconds() / 60.0)
-    if BASE_BAR_MINUTES <= 0:
+
+    # Determine bar size in minutes
+    if htf_timeframe:
+        try:
+            bar_minutes = st.timeframe_to_minutes(htf_timeframe)
+        except:
+            bar_minutes = BASE_BAR_MINUTES
+    else:
+        bar_minutes = BASE_BAR_MINUTES
+
+    if bar_minutes <= 0:
         return 0
-    return int(delta_minutes // BASE_BAR_MINUTES)
+    return int(delta_minutes // bar_minutes)
 
 
 def filters_allow_entry(direction: str, df: pd.DataFrame) -> tuple[bool, str]:
@@ -1007,8 +1028,9 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
     entry_atr = float(position.get("entry_atr", 0.0) or 0.0)
     stake = float(position.get("stake", 0.0) or 0.0)
     entry_time = position.get("entry_time")
+    htf = position.get("htf", None)  # Get HTF from position for correct bars calculation
     latest_ts = df.index[-1]
-    bars_held = bars_in_position(entry_time, latest_ts) if entry_time else 0
+    bars_held = bars_in_position(entry_time, latest_ts, htf) if entry_time else 0
 
     exit_price = None
     reason = None
