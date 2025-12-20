@@ -22,7 +22,7 @@ import plotly.graph_objects as go
 
 import numpy as np
 import pandas as pd
-from ta_compat import AverageTrueRange
+from ta.volatility import AverageTrueRange
 
 try:
     from twilio.rest import Client as TwilioClient # pyright: ignore[reportMissingImports]
@@ -1799,7 +1799,7 @@ def generate_trade_charts(trades_df: pd.DataFrame, open_positions_df: pd.DataFra
                 atr_series = df["atr"]
             elif all(c in df.columns for c in ["high", "low", "close"]):
                 try:
-                    from ta_compat import AverageTrueRange
+                    from ta.volatility import AverageTrueRange
                     atr_series = AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
                 except Exception:
                     pass

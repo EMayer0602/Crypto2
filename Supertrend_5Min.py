@@ -9,7 +9,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
-from ta_compat import AverageTrueRange
+from ta.volatility import AverageTrueRange
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
