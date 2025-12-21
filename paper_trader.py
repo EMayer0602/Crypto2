@@ -39,6 +39,20 @@ except ImportError:
     def get_optimal_hold_bars(symbol: str, direction: str) -> int:
         return 12 if direction.lower() == "long" else 15
 
+# Import EMA slope filter configuration
+try:
+    from optimal_ema_slope_defaults import (
+        USE_EMA_SLOPE_FILTER,
+        get_ema_slope_params,
+        should_filter_entry_by_ema_slope
+    )
+except ImportError:
+    USE_EMA_SLOPE_FILTER = False
+    def get_ema_slope_params(symbol: str, direction: str):
+        return None, None
+    def should_filter_entry_by_ema_slope(symbol: str, direction: str, slope: float) -> bool:
+        return False
+
 CONFIG_FILE = "paper_trading_config.csv"
 STATE_FILE = "paper_trading_state.json"
 TRADE_LOG_FILE = "paper_trading_log.csv"
@@ -882,6 +896,18 @@ def build_indicator_dataframe(symbol: str, indicator_key: str, htf_value: str, p
     for col in ("htf_trend", "htf_indicator", "momentum"):
         if col in df_raw.columns:
             df_ind[col] = df_raw[col]
+
+    # Add EMA slope filter columns for long trade filtering
+    if USE_EMA_SLOPE_FILTER:
+        # Use moderate EMA-20 for all symbols (compromise between too restrictive and no filter)
+        ema_period = 20
+        df_ind[f'ema_{ema_period}'] = df_ind['close'].ewm(span=ema_period, adjust=False).mean()
+        # Calculate slope as percentage change (lookback=1 bar)
+        ema = df_ind[f'ema_{ema_period}']
+        df_ind[f'ema_{ema_period}_slope'] = ((ema - ema.shift(1)) / ema.shift(1)) * 100
+        # Store symbol for later reference
+        df_ind['symbol'] = symbol
+
     return df_ind.dropna(subset=["trend_flag"])
 
 
@@ -968,6 +994,17 @@ def filters_allow_entry(direction: str, df: pd.DataFrame) -> tuple[bool, str]:
                 allows = close_curr < prev_low
         if not allows:
             return False, f"Breakout filter blocked (range={candle_range:.4f})"
+
+    # EMA Slope filter for LONG trades only
+    if USE_EMA_SLOPE_FILTER and direction == "long":
+        ema_slope = curr.get("ema_20_slope")
+        if pd.isna(ema_slope):
+            return False, "EMA slope unavailable"
+        # Block entry if EMA is falling (slope < 0%)
+        # Using slope >= 0% threshold: allows neutral or rising trends only
+        if ema_slope < 0.0:
+            return False, f"EMA-20 slope negative ({ema_slope:.3f}%) - downtrend blocked"
+
     return True, ""
 
 

@@ -10,16 +10,26 @@ USE_EMA_SLOPE_FILTER = True  # Enable/disable EMA slope filter for long trades
 
 # Optimal EMA periods and slope thresholds per symbol for LONG trades
 # Format: (symbol, direction) -> (ema_period, min_slope_threshold)
+#
+# STRATEGY: Moderate filter (EMA-20, Slope ≥ 0%)
+# - Allows long entries when EMA-20 is not falling (neutral or uptrend)
+# - Blocks longs when EMA-20 is declining (downtrend)
+# - Compromise between too restrictive and no filter
 OPTIMAL_EMA_PARAMS = {
-    # Will be populated after running find_optimal_ema_slope.py
-    # Example:
-    # ("ETH/EUR", "long"): (100, 0.2),  # EMA-100, slope >= 0.2%
-    # ("BTC/EUR", "long"): (120, 0.1),  # EMA-120, slope >= 0.1%
+    ("ETH/EUR", "long"): (20, 0.0),
+    ("BTC/EUR", "long"): (20, 0.0),
+    ("SOL/EUR", "long"): (20, 0.0),
+    ("XRP/EUR", "long"): (20, 0.0),
+    ("LINK/EUR", "long"): (20, 0.0),
+    ("LUNC/USDT", "long"): (20, 0.0),
+    ("SUI/EUR", "long"): (20, 0.0),
+    ("TNSR/USDC", "long"): (20, 0.0),
+    ("ZEC/USDC", "long"): (20, 0.0),
 }
 
 # Default fallback values if symbol not found
-DEFAULT_EMA_PERIOD = 100
-DEFAULT_SLOPE_THRESHOLD = 0.1  # 0.1% minimum upward slope
+DEFAULT_EMA_PERIOD = 20
+DEFAULT_SLOPE_THRESHOLD = 0.0  # 0% = not falling (neutral or rising)
 
 
 def get_ema_slope_params(symbol: str, direction: str) -> tuple:
