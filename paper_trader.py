@@ -2374,20 +2374,28 @@ def run_simulation(
     for symbol in unique_symbols:
         for timeframe in unique_timeframes:
             try:
-                # Check if we have enough historical data
-                test_df = st.fetch_data(symbol, timeframe, limit=100)
+                # Check persistent cache directly (not limit-constrained)
+                cached_df = st.load_ohlcv_from_cache(symbol, timeframe)
 
-                if test_df.empty or test_df.index.min() > download_start:
+                if cached_df.empty or cached_df.index.min() > download_start:
                     # Need to download historical data
-                    print(f"[Simulation] Downloading historical data for {symbol} {timeframe}...")
+                    if cached_df.empty:
+                        print(f"[Simulation] No cached data for {symbol} {timeframe} - downloading...")
+                    else:
+                        earliest = cached_df.index.min().strftime('%Y-%m-%d')
+                        needed = download_start.strftime('%Y-%m-%d')
+                        print(f"[Simulation] {symbol} {timeframe}: Cache starts {earliest}, need {needed} - downloading...")
+
                     st.download_historical_ohlcv(symbol, timeframe, download_start, end_ts)
-                    # Clear cache to force reload
-                    cache_key = (symbol, timeframe, st.LOOKBACK)
-                    if cache_key in st.DATA_CACHE:
-                        del st.DATA_CACHE[cache_key]
+
+                    # Clear memory cache to force reload from persistent cache
+                    for key in list(st.DATA_CACHE.keys()):
+                        if key[0] == symbol and key[1] == timeframe:
+                            del st.DATA_CACHE[key]
                 else:
-                    earliest = test_df.index.min().strftime('%Y-%m-%d')
-                    print(f"[Simulation] {symbol} {timeframe}: Data available from {earliest}")
+                    earliest = cached_df.index.min().strftime('%Y-%m-%d')
+                    bars = len(cached_df)
+                    print(f"[Simulation] {symbol} {timeframe}: {bars} bars from {earliest} (sufficient)")
 
             except Exception as exc:
                 print(f"[Simulation] Warning: Could not check/download {symbol} {timeframe}: {exc}")

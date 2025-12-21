@@ -63,6 +63,7 @@ def timeframe_to_minutes(tf_str: str) -> int:
 EXCHANGE_ID = "binance"
 TIMEFRAME = "1h"
 LOOKBACK = 720
+OHLCV_CACHE_DIR = "ohlcv_cache"  # Directory for persistent OHLCV data storage
 SYMBOLS = [
 	"BTC/EUR",
 	"ETH/EUR",
@@ -402,32 +403,40 @@ def fetch_data(symbol, timeframe, limit):
 	if key in DATA_CACHE:
 		base_df = DATA_CACHE[key]
 	else:
-		cache_df = None
-		exchange = get_data_exchange()
-		supported_timeframes = getattr(exchange, "timeframes", {}) or {}
-		if timeframe in supported_timeframes:
-			cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
+		# Try loading from persistent cache first
+		persistent_df = load_ohlcv_from_cache(symbol, timeframe)
+
+		# If we have enough data in persistent cache, use it
+		if not persistent_df.empty and len(persistent_df) >= limit:
+			cache_df = persistent_df.tail(limit)
 		else:
-			target_minutes = timeframe_to_minutes(timeframe)
-			base_minutes = timeframe_to_minutes(TIMEFRAME)
-			if target_minutes < base_minutes or target_minutes % base_minutes != 0:
-				raise ValueError(f"Cannot synthesize timeframe {timeframe} from base {TIMEFRAME}")
-			factor = target_minutes // base_minutes
-			base_limit = limit * factor + 10
-			base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
-			if base_df_source.empty:
-				cache_df = base_df_source
+			# Fall back to API
+			cache_df = None
+			exchange = get_data_exchange()
+			supported_timeframes = getattr(exchange, "timeframes", {}) or {}
+			if timeframe in supported_timeframes:
+				cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
 			else:
-				agg_rule = f"{target_minutes}min"
-				synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
-					"open": "first",
-					"high": "max",
-					"low": "min",
-					"close": "last",
-					"volume": "sum",
-				})
-				synth = synth.dropna(subset=["open", "high", "low", "close"])
-				cache_df = synth.tail(limit)
+				target_minutes = timeframe_to_minutes(timeframe)
+				base_minutes = timeframe_to_minutes(TIMEFRAME)
+				if target_minutes < base_minutes or target_minutes % base_minutes != 0:
+					raise ValueError(f"Cannot synthesize timeframe {timeframe} from base {TIMEFRAME}")
+				factor = target_minutes // base_minutes
+				base_limit = limit * factor + 10
+				base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
+				if base_df_source.empty:
+					cache_df = base_df_source
+				else:
+					agg_rule = f"{target_minutes}min"
+					synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
+						"open": "first",
+						"high": "max",
+						"low": "min",
+						"close": "last",
+						"volume": "sum",
+					})
+					synth = synth.dropna(subset=["open", "high", "low", "close"])
+					cache_df = synth.tail(limit)
 		DATA_CACHE[key] = cache_df
 		base_df = cache_df
 	df_copy = base_df.copy() if base_df is not None else pd.DataFrame()
@@ -538,7 +547,68 @@ def download_historical_ohlcv(symbol, timeframe, start_date, end_date=None):
 	df = df[(df.index >= start_date) & (df.index <= end_date)]
 
 	print(f"[Download] Complete: {len(df)} bars from {df.index[0].strftime('%Y-%m-%d')} to {df.index[-1].strftime('%Y-%m-%d')}")
+
+	# Save to persistent cache
+	save_ohlcv_to_cache(symbol, timeframe, df)
+
 	return df
+
+
+def get_cache_filename(symbol, timeframe):
+	"""Generate cache filename for a symbol/timeframe pair."""
+	# Replace / with _ for filesystem compatibility
+	safe_symbol = symbol.replace('/', '_')
+	return os.path.join(OHLCV_CACHE_DIR, f"{safe_symbol}_{timeframe}.csv")
+
+
+def load_ohlcv_from_cache(symbol, timeframe):
+	"""Load OHLCV data from persistent cache."""
+	cache_file = get_cache_filename(symbol, timeframe)
+
+	if not os.path.exists(cache_file):
+		return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
+	try:
+		df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+		# Ensure timezone
+		if df.index.tzinfo is None:
+			df.index = df.index.tz_localize('UTC').tz_convert(BERLIN_TZ)
+		else:
+			df.index = df.index.tz_convert(BERLIN_TZ)
+		return df
+	except Exception as exc:
+		print(f"[Cache] Error loading {cache_file}: {exc}")
+		return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
+
+def save_ohlcv_to_cache(symbol, timeframe, df):
+	"""Save OHLCV data to persistent cache."""
+	if df.empty:
+		return
+
+	# Create cache directory if needed
+	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
+
+	cache_file = get_cache_filename(symbol, timeframe)
+
+	try:
+		# Load existing data if any
+		existing_df = load_ohlcv_from_cache(symbol, timeframe)
+
+		# Merge with new data
+		if not existing_df.empty:
+			combined = pd.concat([existing_df, df])
+			combined = combined[~combined.index.duplicated(keep='last')]
+			combined = combined.sort_index()
+		else:
+			combined = df
+
+		# Save to CSV
+		combined.to_csv(cache_file)
+		print(f"[Cache] Saved {len(combined)} bars to {cache_file}")
+
+	except Exception as exc:
+		print(f"[Cache] Error saving {cache_file}: {exc}")
 
 
 def update_output_targets():
