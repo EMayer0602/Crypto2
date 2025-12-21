@@ -358,6 +358,12 @@ def _fetch_direct_ohlcv(symbol, timeframe, limit):
 
 
 def _maybe_append_synthetic_bar(df, symbol, timeframe):
+	"""
+	Append a synthetic bar for the current incomplete period using 1m bars or ticker data.
+
+	This ensures simulations always include the very latest data, even if the current
+	hour/period hasn't completed yet.
+	"""
 	try:
 		tf_minutes = timeframe_to_minutes(timeframe)
 	except ValueError:
@@ -366,36 +372,83 @@ def _maybe_append_synthetic_bar(df, symbol, timeframe):
 		return df
 	if df is None:
 		df = pd.DataFrame(columns=["open", "high", "low", "close", "volume"], dtype=float)
+
 	now = pd.Timestamp.now(BERLIN_TZ)
 	bucket = pd.Timedelta(minutes=tf_minutes)
 	current_end = now.floor(f"{tf_minutes}min") + bucket
+
+	# Check if we already have the current bar
 	if not df.empty:
 		last_idx = df.index.max()
 		if last_idx > current_end:
 			return df
 		if last_idx == current_end:
+			# Remove existing incomplete bar - we'll recreate it
 			df = df.drop(index=current_end)
+
 	current_start = current_end - bucket
 	minutes_needed = max(2, int(np.ceil((now - current_start).total_seconds() / 60.0)) + 2)
+
+	# Try to fetch 1-minute bars first (most accurate)
 	try:
 		minute_df = _fetch_direct_ohlcv(symbol, "1m", limit=minutes_needed)
+		slice_df = minute_df[(minute_df.index > current_start) & (minute_df.index <= now)]
+
+		if not slice_df.empty:
+			synthetic = pd.DataFrame({
+				"open": float(slice_df["open"].iloc[0]),
+				"high": float(slice_df["high"].max()),
+				"low": float(slice_df["low"].min()),
+				"close": float(slice_df["close"].iloc[-1]),
+				"volume": float(slice_df["volume"].sum()),
+			}, index=[current_end])
+
+			combined = pd.concat([df, synthetic])
+			combined = combined[~combined.index.duplicated(keep="last")]
+			combined = combined.sort_index()
+
+			print(f"[Synthetic] Created current bar for {symbol} {timeframe} using {len(slice_df)} 1m bars (ends {current_end.strftime('%Y-%m-%d %H:%M')})")
+			return combined
 	except Exception as exc:
-		print(f"[Warn] Failed to fetch 1m data for {symbol}: {exc}")
-		return df
-	slice_df = minute_df[(minute_df.index > current_start) & (minute_df.index <= now)]
-	if slice_df.empty:
-		return df
-	synthetic = pd.DataFrame({
-		"open": float(slice_df["open"].iloc[0]),
-		"high": float(slice_df["high"].max()),
-		"low": float(slice_df["low"].min()),
-		"close": float(slice_df["close"].iloc[-1]),
-		"volume": float(slice_df["volume"].sum()),
-	}, index=[current_end])
-	combined = pd.concat([df, synthetic])
-	combined = combined[~combined.index.duplicated(keep="last")]
-	combined = combined.sort_index()
-	return combined
+		print(f"[Synthetic] Failed to fetch 1m data for {symbol}: {exc}")
+
+	# Fallback: try to use ticker data for current price
+	try:
+		exchange = get_data_exchange()
+		ticker = exchange.fetch_ticker(symbol)
+
+		if ticker and 'last' in ticker and ticker['last']:
+			# For ticker-based bar, we use last price for all OHLC values
+			# This is less accurate but better than no data
+			last_price = float(ticker['last'])
+
+			# Try to get previous close as open price
+			if not df.empty:
+				prev_close = float(df['close'].iloc[-1])
+				synthetic_open = prev_close
+			else:
+				synthetic_open = last_price
+
+			synthetic = pd.DataFrame({
+				"open": synthetic_open,
+				"high": last_price,  # Conservative: use current price
+				"low": last_price,   # Conservative: use current price
+				"close": last_price,
+				"volume": 0.0,  # Ticker doesn't provide volume for incomplete bar
+			}, index=[current_end])
+
+			combined = pd.concat([df, synthetic])
+			combined = combined[~combined.index.duplicated(keep="last")]
+			combined = combined.sort_index()
+
+			print(f"[Synthetic] Created current bar for {symbol} {timeframe} using ticker data @ {last_price:.2f} (ends {current_end.strftime('%Y-%m-%d %H:%M')})")
+			return combined
+	except Exception as exc:
+		print(f"[Synthetic] Failed to fetch ticker for {symbol}: {exc}")
+
+	# If both methods fail, return original dataframe
+	print(f"[Synthetic] Could not create synthetic bar for {symbol} {timeframe} - no data available")
+	return df
 
 
 def fetch_data(symbol, timeframe, limit):
