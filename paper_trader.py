@@ -2396,6 +2396,12 @@ def run_simulation(
             )
             if trades:
                 all_trades.extend(trades)
+    # Show first and last trade dates to identify data gaps
+    if all_trades:
+        first_trade = min(all_trades, key=lambda t: t.entry_time)
+        last_trade = max(all_trades, key=lambda t: t.entry_time)
+        print(f"[Simulation] First trade: {first_trade.entry_time} ({first_trade.symbol} {first_trade.direction})")
+        print(f"[Simulation] Last trade: {last_trade.entry_time} ({last_trade.symbol} {last_trade.direction})")
     return all_trades, sim_state
 
 
