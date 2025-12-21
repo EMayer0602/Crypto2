@@ -487,10 +487,30 @@ def select_best_indicator_per_symbol(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def determine_position_size(symbol: str, state: Dict, fixed_stake: Optional[float]) -> float:
+    """
+    Determine position size for a trade.
+
+    Args:
+        symbol: Trading symbol
+        state: Current state dict with total_capital
+        fixed_stake: Fixed stake amount (if provided), None for dynamic sizing
+
+    Returns:
+        Position size in USDT
+
+    Notes:
+        - If fixed_stake is None or 0: Uses dynamic sizing = total_capital / STAKE_DIVISOR (7)
+        - If fixed_stake is set: Uses that fixed amount
+        - Dynamic sizing provides compounding effect as capital grows
+    """
+    # Use fixed stake if provided and > 0
     if fixed_stake is not None and fixed_stake > 0:
         return fixed_stake
+
+    # Dynamic sizing based on current capital
     total_capital = float(state.get("total_capital", START_TOTAL_CAPITAL))
-    return max(total_capital / STAKE_DIVISOR, 0.0)
+    dynamic_stake = total_capital / STAKE_DIVISOR
+    return max(dynamic_stake, 0.0)
 
 
 def record_symbol_trade(state: Dict, symbol: str) -> None:
@@ -2457,7 +2477,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--stake",
         type=float,
         default=None,
-        help="Fixed stake size per trade (default: dynamic sizing with total_capital/14)",
+        help="Fixed stake size per trade (default: dynamic sizing with total_capital/7)",
+    )
+    parser.add_argument(
+        "--dynamic-stake",
+        action="store_true",
+        help="Force dynamic position sizing (total_capital/7) even if --stake is provided",
     )
     parser.add_argument("--testnet", action="store_true", help="Use Binance testnet credentials and endpoints")
     parser.add_argument("--debug-signals", action="store_true", help="Verbose logging for entry filter decisions")
@@ -2512,7 +2537,18 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
     allowed_symbols = parse_symbol_argument(args.symbols)
     allowed_indicators = parse_indicator_argument(args.indicators)
     force_symbol, force_direction = parse_force_entry_argument(args.force_entry)
-    stake_value = args.stake if args.stake is not None else DEFAULT_FIXED_STAKE
+
+    # Handle stake sizing: dynamic or fixed
+    if args.dynamic_stake:
+        stake_value = None  # None triggers dynamic sizing (total_capital/7)
+        print("[Config] Using dynamic position sizing: stake = total_capital / 7")
+    else:
+        stake_value = args.stake if args.stake is not None else DEFAULT_FIXED_STAKE
+        if stake_value:
+            print(f"[Config] Using fixed stake: {stake_value} USDT")
+        else:
+            print("[Config] Using dynamic position sizing: stake = total_capital / 7")
+
     use_testnet = bool(args.testnet or DEFAULT_USE_TESTNET)
     set_signal_debug(args.debug_signals)
     api_key, api_secret = get_api_credentials(use_testnet=use_testnet)
