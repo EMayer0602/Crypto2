@@ -2371,31 +2371,43 @@ def run_simulation(
     # Add buffer for indicator warmup (30 days before start for safety)
     download_start = start_ts - pd.Timedelta(days=30)
 
+    # Always update to latest available data (now)
+    now = pd.Timestamp.now(tz=st.BERLIN_TZ)
+    download_end = max(end_ts, now)
+
     for symbol in unique_symbols:
         for timeframe in unique_timeframes:
             try:
                 # Check persistent cache directly (not limit-constrained)
                 cached_df = st.load_ohlcv_from_cache(symbol, timeframe)
 
-                if cached_df.empty or cached_df.index.min() > download_start:
-                    # Need to download historical data
-                    if cached_df.empty:
-                        print(f"[Simulation] No cached data for {symbol} {timeframe} - downloading...")
-                    else:
-                        earliest = cached_df.index.min().strftime('%Y-%m-%d')
-                        needed = download_start.strftime('%Y-%m-%d')
-                        print(f"[Simulation] {symbol} {timeframe}: Cache starts {earliest}, need {needed} - downloading...")
+                needs_download = False
+                if cached_df.empty:
+                    print(f"[Simulation] No cached data for {symbol} {timeframe} - downloading...")
+                    needs_download = True
+                else:
+                    earliest = cached_df.index.min()
+                    latest = cached_df.index.max()
 
-                    st.download_historical_ohlcv(symbol, timeframe, download_start, end_ts)
+                    # Check if we need historical data
+                    if earliest > download_start:
+                        print(f"[Simulation] {symbol} {timeframe}: Cache starts {earliest.strftime('%Y-%m-%d')}, need {download_start.strftime('%Y-%m-%d')} - downloading...")
+                        needs_download = True
+
+                    # Check if cache is outdated (older than 2 hours)
+                    elif latest < now - pd.Timedelta(hours=2):
+                        print(f"[Simulation] {symbol} {timeframe}: Cache outdated (last: {latest.strftime('%Y-%m-%d %H:%M')}), updating to now...")
+                        needs_download = True
+                    else:
+                        print(f"[Simulation] {symbol} {timeframe}: {len(cached_df)} bars, {earliest.strftime('%Y-%m-%d')} to {latest.strftime('%Y-%m-%d %H:%M')} ✓")
+
+                if needs_download:
+                    st.download_historical_ohlcv(symbol, timeframe, download_start, download_end)
 
                     # Clear memory cache to force reload from persistent cache
                     for key in list(st.DATA_CACHE.keys()):
                         if key[0] == symbol and key[1] == timeframe:
                             del st.DATA_CACHE[key]
-                else:
-                    earliest = cached_df.index.min().strftime('%Y-%m-%d')
-                    bars = len(cached_df)
-                    print(f"[Simulation] {symbol} {timeframe}: {bars} bars from {earliest} (sufficient)")
 
             except Exception as exc:
                 print(f"[Simulation] Warning: Could not check/download {symbol} {timeframe}: {exc}")
