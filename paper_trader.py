@@ -2667,6 +2667,7 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
             end_ts = resolve_timestamp(args.end, pd.Timestamp.now(tz=st.BERLIN_TZ))
             default_start = end_ts - pd.Timedelta(days=1)
             start_ts = resolve_timestamp(args.start, default_start)
+            print(f"[Simulation] Period: {start_ts.strftime('%Y-%m-%d %H:%M')} → {end_ts.strftime('%Y-%m-%d %H:%M')}")
             trades, final_state = run_simulation(
                 start_ts,
                 end_ts,
@@ -2682,6 +2683,7 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
             )
             trades_df = trades_to_dataframe(trades)
             open_positions = final_state.get("positions", [])
+            print(f"[Simulation] Generated {len(trades)} trades during simulation")
         log_path = args.sim_log or SIMULATION_LOG_FILE
         log_json_path = args.sim_json or SIMULATION_LOG_JSON
         write_closed_trades_report(trades_df, log_path, log_json_path)
