@@ -435,6 +435,112 @@ def fetch_data(symbol, timeframe, limit):
 	return df_with_live
 
 
+def download_historical_ohlcv(symbol, timeframe, start_date, end_date=None):
+	"""
+	Download historical OHLCV data from Binance for a specific date range.
+
+	Args:
+		symbol: Trading pair (e.g., "BTC/EUR")
+		timeframe: Timeframe string (e.g., "1h", "4h", "1d")
+		start_date: Start date (pd.Timestamp or datetime)
+		end_date: End date (pd.Timestamp or datetime), defaults to now
+
+	Returns:
+		DataFrame with OHLCV data for the requested period
+	"""
+	import time
+
+	# Ensure timestamps
+	if isinstance(start_date, str):
+		start_date = pd.Timestamp(start_date, tz=BERLIN_TZ)
+	elif not hasattr(start_date, 'tz_localize'):
+		start_date = pd.Timestamp(start_date)
+	if start_date.tzinfo is None:
+		start_date = start_date.tz_localize(BERLIN_TZ)
+	else:
+		start_date = start_date.tz_convert(BERLIN_TZ)
+
+	if end_date is None:
+		end_date = pd.Timestamp.now(tz=BERLIN_TZ)
+	elif isinstance(end_date, str):
+		end_date = pd.Timestamp(end_date, tz=BERLIN_TZ)
+	elif not hasattr(end_date, 'tz_localize'):
+		end_date = pd.Timestamp(end_date)
+	if end_date.tzinfo is None:
+		end_date = end_date.tz_localize(BERLIN_TZ)
+	else:
+		end_date = end_date.tz_convert(BERLIN_TZ)
+
+	# Convert to UTC milliseconds for Binance API
+	start_ms = int(start_date.tz_convert('UTC').timestamp() * 1000)
+	end_ms = int(end_date.tz_convert('UTC').timestamp() * 1000)
+
+	exchange = get_data_exchange()
+	tf_minutes = timeframe_to_minutes(timeframe)
+	tf_ms = tf_minutes * 60 * 1000
+
+	# Binance limit is 1000 bars per request
+	max_bars_per_request = 1000
+	all_data = []
+	current_start = start_ms
+
+	print(f"[Download] Fetching {symbol} {timeframe} from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+
+	batch_count = 0
+	while current_start < end_ms:
+		try:
+			# Fetch batch
+			ohlcv = exchange.fetch_ohlcv(
+				symbol,
+				timeframe=timeframe,
+				since=current_start,
+				limit=max_bars_per_request
+			)
+
+			if not ohlcv:
+				break
+
+			# Add to results
+			all_data.extend(ohlcv)
+			batch_count += 1
+
+			# Move to next batch (last timestamp + 1 interval)
+			last_timestamp = ohlcv[-1][0]
+			current_start = last_timestamp + tf_ms
+
+			# Progress indicator
+			current_date = pd.Timestamp(last_timestamp, unit='ms', tz='UTC').tz_convert(BERLIN_TZ)
+			print(f"[Download] Batch {batch_count}: Got {len(ohlcv)} bars, up to {current_date.strftime('%Y-%m-%d %H:%M')}")
+
+			# Rate limiting - sleep between requests
+			if current_start < end_ms:
+				time.sleep(0.5)  # 500ms between requests to avoid rate limits
+
+		except Exception as exc:
+			print(f"[Download] Error fetching data: {exc}")
+			break
+
+	if not all_data:
+		print(f"[Download] No data retrieved for {symbol} {timeframe}")
+		return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
+	# Convert to DataFrame
+	cols = ["timestamp", "open", "high", "low", "close", "volume"]
+	df = pd.DataFrame(all_data, columns=cols)
+	df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+	df = df.set_index("timestamp")
+
+	# Remove duplicates and sort
+	df = df[~df.index.duplicated(keep='last')]
+	df = df.sort_index()
+
+	# Filter to requested range
+	df = df[(df.index >= start_date) & (df.index <= end_date)]
+
+	print(f"[Download] Complete: {len(df)} bars from {df.index[0].strftime('%Y-%m-%d')} to {df.index[-1].strftime('%Y-%m-%d')}")
+	return df
+
+
 def update_output_targets():
 	global OUT_DIR, REPORT_FILE, BEST_PARAMS_FILE
 	slug = INDICATOR_SLUG or "supertrend"

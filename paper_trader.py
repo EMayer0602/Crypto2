@@ -2362,6 +2362,38 @@ def run_simulation(
         return [], clone_state(use_saved_state)
     sim_state = clone_state(use_saved_state)
     prune_state_for_indicators(sim_state, allowed_indicators)
+
+    # Pre-download historical data if needed
+    print(f"[Simulation] Checking historical data availability...")
+    unique_symbols = best_df['symbol'].unique() if 'symbol' in best_df.columns else []
+    unique_timeframes = best_df['htf'].unique() if 'htf' in best_df.columns else []
+
+    # Add buffer for indicator warmup (30 days before start for safety)
+    download_start = start_ts - pd.Timedelta(days=30)
+
+    for symbol in unique_symbols:
+        for timeframe in unique_timeframes:
+            try:
+                # Check if we have enough historical data
+                test_df = st.fetch_data(symbol, timeframe, limit=100)
+
+                if test_df.empty or test_df.index.min() > download_start:
+                    # Need to download historical data
+                    print(f"[Simulation] Downloading historical data for {symbol} {timeframe}...")
+                    st.download_historical_ohlcv(symbol, timeframe, download_start, end_ts)
+                    # Clear cache to force reload
+                    cache_key = (symbol, timeframe, st.LOOKBACK)
+                    if cache_key in st.DATA_CACHE:
+                        del st.DATA_CACHE[cache_key]
+                else:
+                    earliest = test_df.index.min().strftime('%Y-%m-%d')
+                    print(f"[Simulation] {symbol} {timeframe}: Data available from {earliest}")
+
+            except Exception as exc:
+                print(f"[Simulation] Warning: Could not check/download {symbol} {timeframe}: {exc}")
+
+    print(f"[Simulation] Historical data check complete")
+
     buffer = pd.Timedelta(minutes=BASE_BAR_MINUTES * 5)
     all_trades: List[TradeResult] = []
     # Pass stake through: None = dynamic sizing, value = fixed stake
