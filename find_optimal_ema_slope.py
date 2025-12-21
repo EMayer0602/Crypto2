@@ -12,11 +12,11 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 import Supertrend_5Min as st
 
-# EMA periods to test
-EMA_PERIODS = [70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200]
+# EMA periods to test - now testing 10 to 70
+EMA_PERIODS = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
 
 # Slope thresholds to test (percentage)
-SLOPE_THRESHOLDS = [0.0, 0.1, 0.2, 0.3, 0.5]  # 0% = any upward, 0.5% = strong upward
+SLOPE_THRESHOLDS = [0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5]  # Added 0.05 and 0.15 for finer granularity
 
 
 def calculate_ema_slope(df: pd.DataFrame, period: int, lookback: int = 1) -> pd.Series:
