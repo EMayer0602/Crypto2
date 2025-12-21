@@ -2366,6 +2366,7 @@ def run_simulation(
     all_trades: List[TradeResult] = []
     # Pass stake through: None = dynamic sizing, value = fixed stake
     stake_value = fixed_stake
+    debug_count = 0  # Only show debug for first few symbols
     for _, row in best_df.iterrows():
         context = build_strategy_context(row)
         config = cfg_lookup.get(context.symbol)
@@ -2378,6 +2379,14 @@ def run_simulation(
         df_range = df_full.loc[mask]
         if len(df_range) < 2:
             continue
+        # Debug: Show data range for first 3 symbols
+        if debug_count < 3:
+            actual_start = df_range.index[0].strftime('%Y-%m-%d')
+            actual_end = df_range.index[-1].strftime('%Y-%m-%d')
+            bars_before_start = len(df_range[df_range.index < start_ts])
+            bars_after_start = len(df_range[df_range.index >= start_ts])
+            print(f"[Debug] {context.symbol} {context.direction}: {len(df_range)} bars ({actual_start} to {actual_end}), {bars_before_start} before start_ts, {bars_after_start} after")
+            debug_count += 1
         for idx in range(1, len(df_range)):
             curr_ts = df_range.index[idx]
             if curr_ts < start_ts:
