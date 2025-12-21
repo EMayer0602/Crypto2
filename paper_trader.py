@@ -46,8 +46,23 @@ try:
         get_ema_slope_params,
         should_filter_entry_by_ema_slope
     )
+    # Import optional advanced filter flags
+    try:
+        from optimal_ema_slope_defaults import USE_PRICE_ABOVE_EMA_FILTER
+    except ImportError:
+        USE_PRICE_ABOVE_EMA_FILTER = False
+    try:
+        from optimal_ema_slope_defaults import USE_DUAL_EMA_FILTER, SECONDARY_EMA_PERIOD, SECONDARY_SLOPE_THRESHOLD
+    except ImportError:
+        USE_DUAL_EMA_FILTER = False
+        SECONDARY_EMA_PERIOD = 50
+        SECONDARY_SLOPE_THRESHOLD = 0.0
 except ImportError:
     USE_EMA_SLOPE_FILTER = False
+    USE_PRICE_ABOVE_EMA_FILTER = False
+    USE_DUAL_EMA_FILTER = False
+    SECONDARY_EMA_PERIOD = 50
+    SECONDARY_SLOPE_THRESHOLD = 0.0
     def get_ema_slope_params(symbol: str, direction: str):
         return None, None
     def should_filter_entry_by_ema_slope(symbol: str, direction: str, slope: float) -> bool:
@@ -899,12 +914,20 @@ def build_indicator_dataframe(symbol: str, indicator_key: str, htf_value: str, p
 
     # Add EMA slope filter columns for long trade filtering
     if USE_EMA_SLOPE_FILTER:
-        # Use moderate EMA-20 for all symbols (compromise between too restrictive and no filter)
+        # Primary EMA-20 for all symbols
         ema_period = 20
         df_ind[f'ema_{ema_period}'] = df_ind['close'].ewm(span=ema_period, adjust=False).mean()
         # Calculate slope as percentage change (lookback=1 bar)
         ema = df_ind[f'ema_{ema_period}']
         df_ind[f'ema_{ema_period}_slope'] = ((ema - ema.shift(1)) / ema.shift(1)) * 100
+
+        # Add EMA-50 for dual EMA confirmation (Option 3)
+        if USE_DUAL_EMA_FILTER:
+            secondary_period = SECONDARY_EMA_PERIOD
+            df_ind[f'ema_{secondary_period}'] = df_ind['close'].ewm(span=secondary_period, adjust=False).mean()
+            ema_secondary = df_ind[f'ema_{secondary_period}']
+            df_ind[f'ema_{secondary_period}_slope'] = ((ema_secondary - ema_secondary.shift(1)) / ema_secondary.shift(1)) * 100
+
         # Store symbol for later reference
         df_ind['symbol'] = symbol
 
@@ -1004,6 +1027,23 @@ def filters_allow_entry(direction: str, df: pd.DataFrame) -> tuple[bool, str]:
         # Using slope >= 0% threshold: allows neutral or rising trends only
         if ema_slope < 0.0:
             return False, f"EMA-20 slope negative ({ema_slope:.3f}%) - downtrend blocked"
+
+        # OPTION 1: Price must be above EMA-20
+        if USE_PRICE_ABOVE_EMA_FILTER:
+            current_price = float(curr["close"])
+            ema_20_value = curr.get("ema_20")
+            if pd.isna(ema_20_value):
+                return False, "EMA-20 value unavailable"
+            if current_price < ema_20_value:
+                return False, f"Price below EMA-20 ({current_price:.2f} < {ema_20_value:.2f})"
+
+        # OPTION 3: Dual EMA confirmation - EMA-50 must also be rising
+        if USE_DUAL_EMA_FILTER:
+            ema_50_slope = curr.get(f"ema_{SECONDARY_EMA_PERIOD}_slope")
+            if pd.isna(ema_50_slope):
+                return False, f"EMA-{SECONDARY_EMA_PERIOD} slope unavailable"
+            if ema_50_slope < SECONDARY_SLOPE_THRESHOLD:
+                return False, f"EMA-{SECONDARY_EMA_PERIOD} slope too low ({ema_50_slope:.3f}% < {SECONDARY_SLOPE_THRESHOLD}%)"
 
     return True, ""
 
