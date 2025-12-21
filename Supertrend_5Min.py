@@ -406,8 +406,15 @@ def fetch_data(symbol, timeframe, limit):
 		# Try loading from persistent cache first
 		persistent_df = load_ohlcv_from_cache(symbol, timeframe)
 
+		# If limit is None or 0, return ALL cached data (for simulations)
+		if limit is None or limit == 0:
+			if not persistent_df.empty:
+				cache_df = persistent_df
+			else:
+				# Fall back to API with large limit
+				cache_df = _fetch_direct_ohlcv(symbol, timeframe, 10000)
 		# If we have enough data in persistent cache, use it
-		if not persistent_df.empty and len(persistent_df) >= limit:
+		elif not persistent_df.empty and len(persistent_df) >= limit:
 			cache_df = persistent_df.tail(limit)
 		else:
 			# Fall back to API
@@ -1226,8 +1233,17 @@ def detect_divergence(df):
 	return df
 
 
-def prepare_symbol_dataframe(symbol):
-	df = fetch_data(symbol, TIMEFRAME, LOOKBACK)
+def prepare_symbol_dataframe(symbol, use_all_cached_data=False):
+	"""
+	Prepare symbol dataframe with indicators.
+
+	Args:
+		symbol: Trading pair
+		use_all_cached_data: If True, load ALL cached historical data (for simulations)
+	                         If False, use LOOKBACK limit (for live trading)
+	"""
+	limit = None if use_all_cached_data else LOOKBACK
+	df = fetch_data(symbol, TIMEFRAME, limit)
 	df = attach_higher_timeframe_trend(df, symbol)
 	df = attach_momentum_filter(df)
 	df = attach_jma_trend_filter(df)

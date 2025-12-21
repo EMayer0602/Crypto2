@@ -780,8 +780,8 @@ def build_strategy_context(row: pd.Series) -> StrategyContext:
     )
 
 
-def build_dataframe_for_context(context: StrategyContext) -> pd.DataFrame:
-    return build_indicator_dataframe(context.symbol, context.indicator, context.htf, context.param_a, context.param_b)
+def build_dataframe_for_context(context: StrategyContext, use_all_data: bool = False) -> pd.DataFrame:
+    return build_indicator_dataframe(context.symbol, context.indicator, context.htf, context.param_a, context.param_b, use_all_data=use_all_data)
 
 
 def resolve_timestamp(value: Optional[str], default: Optional[pd.Timestamp] = None) -> pd.Timestamp:
@@ -923,10 +923,10 @@ def load_replay_trades_csv(path: str) -> pd.DataFrame:
     return df
 
 
-def build_indicator_dataframe(symbol: str, indicator_key: str, htf_value: str, param_a: float, param_b: float) -> pd.DataFrame:
+def build_indicator_dataframe(symbol: str, indicator_key: str, htf_value: str, param_a: float, param_b: float, use_all_data: bool = False) -> pd.DataFrame:
     st.apply_indicator_type(indicator_key)
     st.apply_higher_timeframe(htf_value)
-    df_raw = st.prepare_symbol_dataframe(symbol)
+    df_raw = st.prepare_symbol_dataframe(symbol, use_all_cached_data=use_all_data)
     df_ind = st.compute_indicator(df_raw.copy(), param_a, param_b)
     for col in ("htf_trend", "htf_indicator", "momentum"):
         if col in df_raw.columns:
@@ -2411,7 +2411,8 @@ def run_simulation(
         config = cfg_lookup.get(context.symbol)
         if not config or not direction_allowed(config, context.direction):
             continue
-        df_full = build_dataframe_for_context(context)
+        # Use ALL cached historical data for simulations (not just LOOKBACK limit)
+        df_full = build_dataframe_for_context(context, use_all_data=True)
         if df_full.empty:
             continue
         mask = (df_full.index >= (start_ts - buffer)) & (df_full.index <= end_ts)
