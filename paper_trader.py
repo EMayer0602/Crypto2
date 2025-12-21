@@ -2364,7 +2364,8 @@ def run_simulation(
     prune_state_for_indicators(sim_state, allowed_indicators)
     buffer = pd.Timedelta(minutes=BASE_BAR_MINUTES * 5)
     all_trades: List[TradeResult] = []
-    stake_value = fixed_stake if fixed_stake is not None else DEFAULT_FIXED_STAKE
+    # Pass stake through: None = dynamic sizing, value = fixed stake
+    stake_value = fixed_stake
     for _, row in best_df.iterrows():
         context = build_strategy_context(row)
         config = cfg_lookup.get(context.symbol)
@@ -2479,11 +2480,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=None,
         help="Fixed stake size per trade (default: dynamic sizing with total_capital/7)",
     )
-    parser.add_argument(
-        "--dynamic-stake",
-        action="store_true",
-        help="Force dynamic position sizing (total_capital/7) even if --stake is provided",
-    )
     parser.add_argument("--testnet", action="store_true", help="Use Binance testnet credentials and endpoints")
     parser.add_argument("--debug-signals", action="store_true", help="Verbose logging for entry filter decisions")
     parser.add_argument("--refresh-params", action="store_true", help="Re-run overall-best parameter export before trading")
@@ -2538,16 +2534,13 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
     allowed_indicators = parse_indicator_argument(args.indicators)
     force_symbol, force_direction = parse_force_entry_argument(args.force_entry)
 
-    # Handle stake sizing: dynamic or fixed
-    if args.dynamic_stake:
+    # Handle stake sizing: dynamic by default, fixed if --stake provided
+    if args.stake is not None:
+        stake_value = args.stake
+        print(f"[Config] Using fixed stake: {stake_value} USDT")
+    else:
         stake_value = None  # None triggers dynamic sizing (total_capital/7)
         print("[Config] Using dynamic position sizing: stake = total_capital / 7")
-    else:
-        stake_value = args.stake if args.stake is not None else DEFAULT_FIXED_STAKE
-        if stake_value:
-            print(f"[Config] Using fixed stake: {stake_value} USDT")
-        else:
-            print("[Config] Using dynamic position sizing: stake = total_capital / 7")
 
     use_testnet = bool(args.testnet or DEFAULT_USE_TESTNET)
     set_signal_debug(args.debug_signals)
