@@ -410,9 +410,12 @@ def fetch_data(symbol, timeframe, limit):
 		if limit is None or limit == 0:
 			if not persistent_df.empty:
 				cache_df = persistent_df
+				print(f"[Cache] Loaded {len(cache_df)} bars for {symbol} {timeframe} from {cache_df.index[0].strftime('%Y-%m-%d')} to {cache_df.index[-1].strftime('%Y-%m-%d')}")
 			else:
 				# Fall back to API with large limit
 				cache_df = _fetch_direct_ohlcv(symbol, timeframe, 10000)
+				if not cache_df.empty:
+					print(f"[API] Fetched {len(cache_df)} bars for {symbol} {timeframe} from {cache_df.index[0].strftime('%Y-%m-%d')} to {cache_df.index[-1].strftime('%Y-%m-%d')}")
 		# If we have enough data in persistent cache, use it
 		elif not persistent_df.empty and len(persistent_df) >= limit:
 			cache_df = persistent_df.tail(limit)
@@ -577,8 +580,8 @@ def load_ohlcv_from_cache(symbol, timeframe):
 
 	try:
 		df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
-		# Ensure timezone
-		if df.index.tzinfo is None:
+		# Ensure timezone (use .tz for DatetimeIndex, not .tzinfo)
+		if df.index.tz is None:
 			df.index = df.index.tz_localize('UTC').tz_convert(BERLIN_TZ)
 		else:
 			df.index = df.index.tz_convert(BERLIN_TZ)
