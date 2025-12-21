@@ -18,7 +18,7 @@ SYMBOLS = [
     "LUNC/USDT", "SOL/EUR", "SUI/EUR", "TNSR/USDC", "ZEC/USDC"
 ]
 
-TIMEFRAMES = ["1h", "3h", "4h", "6h", "8h", "12h", "23h", "24h"]
+TIMEFRAMES = ["1h", "2h", "3h", "4h", "5h", "6h", "8h", "12h", "23h", "24h"]
 
 def update_latest_data():
     """Update cache with latest data from Binance."""

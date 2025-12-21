@@ -732,7 +732,8 @@ def get_enabled_directions():
 
 
 def get_highertimeframe_candidates():
-	return [f"{hours}h" for hours in range(3, 25)]
+	# Include shorter timeframes (1h, 2h) plus standard range (3h-24h)
+	return ["1h", "2h"] + [f"{hours}h" for hours in range(3, 25)]
 
 
 def compute_supertrend(df, length=10, factor=3.0):
