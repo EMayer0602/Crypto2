@@ -581,11 +581,12 @@ def load_ohlcv_from_cache(symbol, timeframe):
 	try:
 		df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
 
-		# Ensure index is DatetimeIndex
+		# Ensure index is DatetimeIndex with proper timezone handling
 		if not isinstance(df.index, pd.DatetimeIndex):
-			df.index = pd.to_datetime(df.index)
+			# Use utc=True to handle timezone-aware datetime strings in CSV
+			df.index = pd.to_datetime(df.index, utc=True)
 
-		# Ensure timezone
+		# Ensure timezone is BERLIN_TZ
 		if df.index.tz is None:
 			df.index = df.index.tz_localize('UTC').tz_convert(BERLIN_TZ)
 		else:
