@@ -86,7 +86,7 @@ BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
 DEFAULT_FIXED_STAKE = 2000.0  # Fixed stake per trade
 DEFAULT_ALLOWED_DIRECTIONS = ["long", "short"]  # Enable both long and short trades
-DEFAULT_USE_TESTNET = True
+DEFAULT_USE_TESTNET = False  # Testnet should be opt-in with --testnet flag
 USE_TIME_BASED_EXIT = True  # Enable time-based exits based on optimal hold times
 SIGNAL_DEBUG = False
 DEFAULT_SIGNAL_INTERVAL_MIN = 15
@@ -2431,7 +2431,8 @@ def main(
         return
     state = load_state()
     prune_state_for_indicators(state, allowed_indicators)
-    stake_value = fixed_stake if fixed_stake is not None else DEFAULT_FIXED_STAKE
+    # Pass stake through: None = dynamic sizing, value = fixed stake
+    stake_value = fixed_stake
     closed_trades: List[TradeResult] = []
     for _, row in best_df.iterrows():
         trades = process_strategy_row(
