@@ -127,6 +127,22 @@ CLEAR_BASE_OUTPUT_ON_SWEEP = True
 OVERALL_SUMMARY_HTML = os.path.join(BASE_OUT_DIR, "overall_best_results.html")
 OVERALL_PARAMS_CSV = os.path.join(BASE_OUT_DIR, "best_params_overall.csv")
 OVERALL_DETAILED_HTML = os.path.join(BASE_OUT_DIR, "overall_best_detailed.html")
+
+# Load local configuration overrides if available
+_config_local_path = Path(__file__).resolve().parent / "config_local.py"
+if _config_local_path.exists():
+	try:
+		import importlib.util
+		_spec = importlib.util.spec_from_file_location("config_local", _config_local_path)
+		_config_local = importlib.util.module_from_spec(_spec)
+		_spec.loader.exec_module(_config_local)
+		# Override settings from config_local
+		for _name in dir(_config_local):
+			if not _name.startswith("_") and _name.isupper():
+				globals()[_name] = getattr(_config_local, _name)
+		print(f"[Config] Loaded local configuration overrides from config_local.py")
+	except Exception as _exc:
+		print(f"[Config] Failed to load config_local.py: {_exc}")
 OVERALL_FLAT_CSV = os.path.join(BASE_OUT_DIR, "overall_best_flat_trades.csv")
 OVERALL_FLAT_JSON = os.path.join(BASE_OUT_DIR, "overall_best_flat_trades.json")
 GLOBAL_BEST_RESULTS = {}
