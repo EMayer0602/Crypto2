@@ -378,8 +378,8 @@ def _maybe_append_synthetic_bar(df, symbol, timeframe):
 	return combined
 
 
-def fetch_data(symbol, timeframe, limit):
-	key = (symbol, timeframe, limit)
+def fetch_data(symbol, timeframe, limit, use_all_cached_data=False):
+	key = (symbol, timeframe, limit, use_all_cached_data)
 	if key in DATA_CACHE:
 		base_df = DATA_CACHE[key]
 	else:
@@ -398,12 +398,19 @@ def fetch_data(symbol, timeframe, limit):
 					combined = pd.concat([parquet_df, recent_df])
 					combined = combined[~combined.index.duplicated(keep="last")]
 					combined = combined.sort_index()
-					cache_df = combined.tail(limit) if len(combined) > limit else combined
+					# Use all data if requested, otherwise tail to limit
+					if use_all_cached_data:
+						cache_df = combined
+					else:
+						cache_df = combined.tail(limit) if len(combined) > limit else combined
 					# Save updated cache back to parquet
 					_save_parquet_cache(symbol, timeframe, combined)
 				except Exception as exc:
 					print(f"[Warn] Failed to fetch recent data for {symbol} {timeframe}: {exc}")
-					cache_df = parquet_df.tail(limit)
+					if use_all_cached_data:
+						cache_df = parquet_df
+					else:
+						cache_df = parquet_df.tail(limit)
 			else:
 				# No parquet cache, fetch from exchange
 				cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
@@ -415,7 +422,7 @@ def fetch_data(symbol, timeframe, limit):
 				raise ValueError(f"Cannot synthesize timeframe {timeframe} from base {TIMEFRAME}")
 			factor = target_minutes // base_minutes
 			base_limit = limit * factor + 10
-			base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
+			base_df_source = fetch_data(symbol, TIMEFRAME, base_limit, use_all_cached_data=use_all_cached_data)
 			if base_df_source.empty:
 				cache_df = base_df_source
 			else:
@@ -428,7 +435,10 @@ def fetch_data(symbol, timeframe, limit):
 					"volume": "sum",
 				})
 				synth = synth.dropna(subset=["open", "high", "low", "close"])
-				cache_df = synth.tail(limit)
+				if use_all_cached_data:
+					cache_df = synth
+				else:
+					cache_df = synth.tail(limit)
 
 		DATA_CACHE[key] = cache_df
 		base_df = cache_df
@@ -825,8 +835,8 @@ def attach_momentum_filter(df):
 	return df
 
 
-def prepare_symbol_dataframe(symbol):
-	df = fetch_data(symbol, TIMEFRAME, LOOKBACK)
+def prepare_symbol_dataframe(symbol, use_all_cached_data=False):
+	df = fetch_data(symbol, TIMEFRAME, LOOKBACK, use_all_cached_data=use_all_cached_data)
 	df = attach_higher_timeframe_trend(df, symbol)
 	df = attach_momentum_filter(df)
 	return df
