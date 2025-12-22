@@ -43,6 +43,7 @@ SIMULATION_SUMMARY_JSON = os.path.join("report_html", "trading_summary.json")
 BEST_PARAMS_CSV = st.OVERALL_PARAMS_CSV
 START_TOTAL_CAPITAL = 14_000.0
 MAX_OPEN_POSITIONS = 5
+MAX_HTF_HOURS = 12  # Cap HTF to prevent overly long timeframes blocking trades
 STAKE_DIVISOR = 7 # stake = current total_capital / STAKE_DIVISOR
 DEFAULT_DIRECTION_CAPITAL = 2_800.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
@@ -672,11 +673,32 @@ def normalize_params(row: pd.Series, indicator_key: str) -> tuple[float, float]:
     return float(param_a), float(param_b)
 
 
+def cap_htf_value(htf_str: str, max_hours: int = None) -> str:
+    """Cap HTF value to max_hours. E.g., '21h' with max=12 returns '12h'."""
+    if max_hours is None:
+        max_hours = MAX_HTF_HOURS
+    if max_hours <= 0:
+        return htf_str  # No capping
+    htf_str = htf_str.strip()
+    if not htf_str:
+        return st.HIGHER_TIMEFRAME
+    # Parse hours from string like "21h", "4h", "12h"
+    if htf_str.endswith("h"):
+        try:
+            hours = int(htf_str[:-1])
+            if hours > max_hours:
+                return f"{max_hours}h"
+        except ValueError:
+            pass
+    return htf_str
+
+
 def build_strategy_context(row: pd.Series) -> StrategyContext:
     symbol = row["Symbol"].strip()
     direction = row["Direction"].strip().lower()
     indicator_key = row["Indicator"].strip()
-    htf_value = str(row.get("HTF", st.HIGHER_TIMEFRAME) or st.HIGHER_TIMEFRAME).strip()
+    htf_raw = str(row.get("HTF", st.HIGHER_TIMEFRAME) or st.HIGHER_TIMEFRAME).strip()
+    htf_value = cap_htf_value(htf_raw)
     param_a, param_b = normalize_params(row, indicator_key)
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
