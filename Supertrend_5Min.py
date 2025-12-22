@@ -80,9 +80,9 @@ SYMBOLS = [
 	"ZEC/USDC",
 ]
 
-RUN_PARAMETER_SWEEP = False
+RUN_PARAMETER_SWEEP = True  # ← AKTIVIERT für komplette Optimierung
 RUN_SAVED_PARAMS = False
-RUN_OVERALL_BEST = True
+RUN_OVERALL_BEST = False  # ← Deaktiviert, weil wir neu optimieren
 ENABLE_LONGS = True
 ENABLE_SHORTS = True  # Enabled for both long and short trading
 
