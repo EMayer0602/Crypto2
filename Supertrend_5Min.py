@@ -203,6 +203,42 @@ BEST_PARAMS_FILE = "best_params.csv"
 _exchange = None
 _data_exchange = None
 DATA_CACHE = {}
+PARQUET_CACHE_DIR = Path("cache_ohlcv")
+
+
+def _load_parquet_cache(symbol: str, timeframe: str) -> pd.DataFrame:
+	"""Load cached OHLCV data from parquet file if available."""
+	symbol_clean = symbol.replace("/", "_")
+	cache_path = PARQUET_CACHE_DIR / f"{symbol_clean}_{timeframe}.parquet"
+	if not cache_path.exists():
+		return pd.DataFrame()
+	try:
+		df = pd.read_parquet(cache_path)
+		if not df.empty:
+			if df.index.tz is None:
+				df.index = pd.to_datetime(df.index).tz_localize("UTC").tz_convert(BERLIN_TZ)
+			elif str(df.index.tz) != str(BERLIN_TZ):
+				df.index = df.index.tz_convert(BERLIN_TZ)
+		start_date = df.index.min().strftime("%Y-%m-%d") if not df.empty else "N/A"
+		end_date = df.index.max().strftime("%Y-%m-%d") if not df.empty else "N/A"
+		print(f"[Cache] Loaded {len(df)} bars for {symbol} {timeframe} from {start_date} to {end_date}")
+		return df
+	except Exception as exc:
+		print(f"[Warn] Failed to load parquet cache {cache_path}: {exc}")
+		return pd.DataFrame()
+
+
+def _save_parquet_cache(symbol: str, timeframe: str, df: pd.DataFrame) -> None:
+	"""Save OHLCV data to parquet cache file."""
+	if df.empty:
+		return
+	PARQUET_CACHE_DIR.mkdir(exist_ok=True)
+	symbol_clean = symbol.replace("/", "_")
+	cache_path = PARQUET_CACHE_DIR / f"{symbol_clean}_{timeframe}.parquet"
+	try:
+		df.to_parquet(cache_path)
+	except Exception as exc:
+		print(f"[Warn] Failed to save parquet cache {cache_path}: {exc}")
 
 
 def configure_exchange(use_testnet=None) -> None:
@@ -347,12 +383,32 @@ def fetch_data(symbol, timeframe, limit):
 	if key in DATA_CACHE:
 		base_df = DATA_CACHE[key]
 	else:
-		cache_df = None
+		# Try to load from parquet cache first
+		parquet_df = _load_parquet_cache(symbol, timeframe)
+
 		exchange = get_data_exchange()
 		supported_timeframes = getattr(exchange, "timeframes", {}) or {}
+
 		if timeframe in supported_timeframes:
-			cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
+			if not parquet_df.empty:
+				# Fetch only recent data to update the cache
+				try:
+					recent_df = _fetch_direct_ohlcv(symbol, timeframe, min(limit, 100))
+					# Merge parquet cache with recent data
+					combined = pd.concat([parquet_df, recent_df])
+					combined = combined[~combined.index.duplicated(keep="last")]
+					combined = combined.sort_index()
+					cache_df = combined.tail(limit) if len(combined) > limit else combined
+					# Save updated cache back to parquet
+					_save_parquet_cache(symbol, timeframe, combined)
+				except Exception as exc:
+					print(f"[Warn] Failed to fetch recent data for {symbol} {timeframe}: {exc}")
+					cache_df = parquet_df.tail(limit)
+			else:
+				# No parquet cache, fetch from exchange
+				cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
 		else:
+			# Synthesize from base timeframe
 			target_minutes = timeframe_to_minutes(timeframe)
 			base_minutes = timeframe_to_minutes(TIMEFRAME)
 			if target_minutes < base_minutes or target_minutes % base_minutes != 0:
@@ -373,6 +429,7 @@ def fetch_data(symbol, timeframe, limit):
 				})
 				synth = synth.dropna(subset=["open", "high", "low", "close"])
 				cache_df = synth.tail(limit)
+
 		DATA_CACHE[key] = cache_df
 		base_df = cache_df
 	df_copy = base_df.copy() if base_df is not None else pd.DataFrame()
