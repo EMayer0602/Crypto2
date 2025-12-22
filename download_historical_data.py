@@ -30,7 +30,7 @@ load_dotenv()
 
 # Configuration
 BERLIN_TZ = pytz.timezone("Europe/Berlin")
-CACHE_DIR = Path("cache_ohlcv")
+CACHE_DIR = Path("ohlcv_cache")
 CACHE_DIR.mkdir(exist_ok=True)
 
 # Default symbols from Supertrend_5Min.py

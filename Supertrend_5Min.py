@@ -203,7 +203,7 @@ BEST_PARAMS_FILE = "best_params.csv"
 _exchange = None
 _data_exchange = None
 DATA_CACHE = {}
-PARQUET_CACHE_DIR = Path("cache_ohlcv")
+PARQUET_CACHE_DIR = Path("ohlcv_cache")
 
 
 def _load_parquet_cache(symbol: str, timeframe: str) -> pd.DataFrame:
