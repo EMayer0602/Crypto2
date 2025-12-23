@@ -2453,7 +2453,15 @@ def run_simulation(
         if len(df_range) < 2:
             print(f"[Simulation] SKIP {context.symbol} {context.direction} {context.indicator} {context.htf}: only {len(df_range)} bars in range (need 2+)")
             continue
-        print(f"[Simulation] Processing {context.symbol} {context.direction} {context.indicator} {context.htf}: {len(df_range)} bars")
+        # Debug: Count trend flips for BTC/ETH
+        if context.symbol in ("BTC/EUR", "ETH/EUR"):
+            trend_flags = df_range["trend_flag"].values
+            flips = sum(1 for i in range(1, len(trend_flags)) if trend_flags[i] != trend_flags[i-1])
+            long_entries = sum(1 for i in range(1, len(trend_flags)) if trend_flags[i-1] == -1 and trend_flags[i] == 1)
+            short_entries = sum(1 for i in range(1, len(trend_flags)) if trend_flags[i-1] == 1 and trend_flags[i] == -1)
+            print(f"[DEBUG] {context.symbol} {context.direction} {context.indicator} {context.htf}: {len(df_range)} bars, {flips} flips, {long_entries} long signals, {short_entries} short signals")
+        else:
+            print(f"[Simulation] Processing {context.symbol} {context.direction} {context.indicator} {context.htf}: {len(df_range)} bars")
         for idx in range(1, len(df_range)):
             curr_ts = df_range.index[idx]
             if curr_ts < start_ts:
