@@ -340,7 +340,48 @@ def _fetch_direct_ohlcv(symbol, timeframe, limit):
 	return df.set_index("timestamp").tail(limit)
 
 
-def _maybe_append_synthetic_bar(df, symbol, timeframe):
+def _synthesize_bars_from_1m(symbol: str, timeframe: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
+	"""Synthesize OHLCV bars from 1-minute data for a given time range."""
+	try:
+		tf_minutes = timeframe_to_minutes(timeframe)
+	except ValueError:
+		return pd.DataFrame()
+
+	# Calculate how many 1m bars we need
+	total_minutes = int((end_ts - start_ts).total_seconds() / 60) + 10
+	total_minutes = min(total_minutes, 1500)  # API limit
+
+	try:
+		minute_df = _fetch_direct_ohlcv(symbol, "1m", limit=total_minutes)
+	except Exception as exc:
+		print(f"[Warn] Failed to fetch 1m data for {symbol}: {exc}")
+		return pd.DataFrame()
+
+	if minute_df.empty:
+		return pd.DataFrame()
+
+	# Resample to target timeframe
+	agg_rule = f"{tf_minutes}min"
+	synth = minute_df.resample(agg_rule, label="right", closed="right").agg({
+		"open": "first",
+		"high": "max",
+		"low": "min",
+		"close": "last",
+		"volume": "sum",
+	})
+	synth = synth.dropna(subset=["open", "high", "low", "close"])
+	return synth
+
+
+def _maybe_append_synthetic_bar(df, symbol, timeframe, max_synthetic_bars: int = 24):
+	"""Append missing bars by synthesizing from 1-minute data.
+
+	Args:
+		df: Existing OHLCV DataFrame
+		symbol: Trading pair symbol
+		timeframe: Target timeframe (e.g., "1h", "4h")
+		max_synthetic_bars: Maximum number of bars to synthesize (default 24)
+	"""
 	try:
 		tf_minutes = timeframe_to_minutes(timeframe)
 	except ValueError:
@@ -349,33 +390,43 @@ def _maybe_append_synthetic_bar(df, symbol, timeframe):
 		return df
 	if df is None:
 		df = pd.DataFrame(columns=["open", "high", "low", "close", "volume"], dtype=float)
+
 	now = pd.Timestamp.now(BERLIN_TZ)
 	bucket = pd.Timedelta(minutes=tf_minutes)
 	current_end = now.floor(f"{tf_minutes}min") + bucket
-	if not df.empty:
+
+	# Determine how many bars are missing
+	if df.empty:
+		last_complete_bar = current_end - bucket * max_synthetic_bars
+	else:
 		last_idx = df.index.max()
-		if last_idx > current_end:
+		if last_idx >= current_end:
 			return df
-		if last_idx == current_end:
-			df = df.drop(index=current_end)
-	current_start = current_end - bucket
-	minutes_needed = max(2, int(np.ceil((now - current_start).total_seconds() / 60.0)) + 2)
-	try:
-		minute_df = _fetch_direct_ohlcv(symbol, "1m", limit=minutes_needed)
-	except Exception as exc:
-		print(f"[Warn] Failed to fetch 1m data for {symbol}: {exc}")
+		last_complete_bar = last_idx
+
+	# Calculate bars to synthesize
+	bars_missing = int((current_end - last_complete_bar) / bucket)
+	bars_to_synth = min(bars_missing, max_synthetic_bars)
+
+	if bars_to_synth <= 0:
 		return df
-	slice_df = minute_df[(minute_df.index > current_start) & (minute_df.index <= now)]
-	if slice_df.empty:
+
+	# Synthesize missing bars from 1m data
+	synth_start = current_end - bucket * bars_to_synth
+	synth_df = _synthesize_bars_from_1m(symbol, timeframe, synth_start, now)
+
+	if synth_df.empty:
 		return df
-	synthetic = pd.DataFrame({
-		"open": float(slice_df["open"].iloc[0]),
-		"high": float(slice_df["high"].max()),
-		"low": float(slice_df["low"].min()),
-		"close": float(slice_df["close"].iloc[-1]),
-		"volume": float(slice_df["volume"].sum()),
-	}, index=[current_end])
-	combined = pd.concat([df, synthetic])
+
+	# Filter to only include bars after the last existing bar
+	if not df.empty:
+		synth_df = synth_df[synth_df.index > last_complete_bar]
+
+	if synth_df.empty:
+		return df
+
+	# Combine with existing data
+	combined = pd.concat([df, synth_df])
 	combined = combined[~combined.index.duplicated(keep="last")]
 	combined = combined.sort_index()
 	return combined
