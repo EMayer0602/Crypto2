@@ -79,8 +79,8 @@ SIMULATION_SUMMARY_HTML = os.path.join("report_html", "trading_summary.html")
 SIMULATION_SUMMARY_JSON = os.path.join("report_html", "trading_summary.json")
 BEST_PARAMS_CSV = st.OVERALL_PARAMS_CSV
 START_TOTAL_CAPITAL = 14_000.0
-MAX_OPEN_POSITIONS = 7
-STAKE_DIVISOR = 7 # stake = current total_capital / STAKE_DIVISOR
+MAX_OPEN_POSITIONS = 10
+STAKE_DIVISOR = 10  # stake = current total_capital / STAKE_DIVISOR = 14000/10 = 1400
 DEFAULT_DIRECTION_CAPITAL = 2_800.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
