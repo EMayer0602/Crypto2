@@ -30,6 +30,10 @@ except ImportError:  # Twilio is optional; SMS alerts require pip install twilio
     TwilioClient = None
 
 import Supertrend_5Min as st
+from optimal_hold_times_defaults import get_optimal_hold_bars
+
+# Time-based exit configuration
+USE_TIME_BASED_EXIT = True  # Enable time-based exit after optimal hold bars
 
 CONFIG_FILE = "paper_trading_config.csv"
 STATE_FILE = "paper_trading_state.json"
@@ -48,7 +52,7 @@ DEFAULT_DIRECTION_CAPITAL = 2_800.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
 DEFAULT_FIXED_STAKE = None  # Use dynamic sizing unless explicitly overridden
-DEFAULT_ALLOWED_DIRECTIONS = ["long"]
+DEFAULT_ALLOWED_DIRECTIONS = ["long", "short"]
 DEFAULT_USE_TESTNET = True
 SIGNAL_DEBUG = False
 DEFAULT_SIGNAL_INTERVAL_MIN = 15
@@ -958,7 +962,14 @@ def find_last_signal_bar(df: pd.DataFrame, direction: str, lookback_hours: float
     return ts, price, ts >= cutoff
 
 
-def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], min_hold_bars: int) -> Optional[Dict]:
+def evaluate_exit(
+    position: Dict,
+    df: pd.DataFrame,
+    atr_mult: Optional[float],
+    min_hold_bars: int,
+    symbol: str = "",
+    indicator: str = "",
+) -> Optional[Dict]:
     if len(df) < 2:
         return None
     curr = df.iloc[-1]
@@ -974,6 +985,8 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
 
     exit_price = None
     reason = None
+
+    # 1. ATR stop loss check (highest priority)
     if atr_mult is not None and entry_atr > 0:
         stop_price = entry_price - atr_mult * entry_atr if long_mode else entry_price + atr_mult * entry_atr
         hit_stop = (long_mode and float(curr["low"]) <= stop_price) or (
@@ -983,6 +996,14 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
             exit_price = stop_price
             reason = f"ATR stop x{atr_mult:.2f}"
 
+    # 2. Time-based exit after optimal hold bars
+    if exit_price is None and USE_TIME_BASED_EXIT and symbol and indicator:
+        optimal_bars = get_optimal_hold_bars(symbol, indicator, direction)
+        if bars_held >= optimal_bars:
+            exit_price = float(curr["close"])
+            reason = f"Time-based exit ({bars_held} bars)"
+
+    # 3. Trend flip exit (only if min_hold_bars met)
     trend_curr = int(curr["trend_flag"])
     trend_prev = int(prev["trend_flag"])
     flip_long = long_mode and trend_prev == 1 and trend_curr == -1
@@ -1033,7 +1054,10 @@ def process_snapshot(
     existing = find_position(state, context.key)
     if existing:
         prior_total = state["total_capital"]
-        exit_info = evaluate_exit(existing, df_slice, context.atr_mult, context.min_hold_bars)
+        exit_info = evaluate_exit(
+            existing, df_slice, context.atr_mult, context.min_hold_bars,
+            symbol=context.symbol, indicator=context.indicator
+        )
         if exit_info:
             size_units = float(existing.get("size_units", 0.0))
             stake_val = float(existing.get("stake"))
