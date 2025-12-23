@@ -2432,19 +2432,24 @@ def run_simulation(
     all_trades: List[TradeResult] = []
     # Pass stake through: None = dynamic sizing, value = fixed stake
     stake_value = fixed_stake
+    print(f"[Simulation] Processing {len(best_df)} strategy rows...")
     for _, row in best_df.iterrows():
         context = build_strategy_context(row)
         config = cfg_lookup.get(context.symbol)
         if not config or not direction_allowed(config, context.direction):
+            print(f"[Simulation] SKIP {context.symbol} {context.direction}: config missing or direction not allowed")
             continue
         # Use ALL cached historical data for simulations (not just LOOKBACK limit)
         df_full = build_dataframe_for_context(context, use_all_data=True)
         if df_full.empty:
+            print(f"[Simulation] SKIP {context.symbol} {context.direction} {context.indicator} {context.htf}: NO DATA")
             continue
         mask = (df_full.index >= (start_ts - buffer)) & (df_full.index <= end_ts)
         df_range = df_full.loc[mask]
         if len(df_range) < 2:
+            print(f"[Simulation] SKIP {context.symbol} {context.direction} {context.indicator} {context.htf}: only {len(df_range)} bars in range (need 2+)")
             continue
+        print(f"[Simulation] Processing {context.symbol} {context.direction} {context.indicator} {context.htf}: {len(df_range)} bars")
         for idx in range(1, len(df_range)):
             curr_ts = df_range.index[idx]
             if curr_ts < start_ts:
