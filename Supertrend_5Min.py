@@ -198,6 +198,16 @@ INDICATOR_PRESETS = {
 		"default_a": 0.5,
 		"default_b": 0.05,
 	},
+	"htf_crossover": {
+		"display_name": "HTF Crossover",
+		"slug": "htf_crossover",
+		"param_a_label": "Length",
+		"param_b_label": "Factor",
+		"param_a_values": [7, 10, 14],
+		"param_b_values": [2.0, 3.0, 4.0],
+		"default_a": 10,
+		"default_b": 3.0,
+	},
 }
 
 ACTIVE_INDICATORS = ["jma", "kama", "supertrend"]
@@ -772,6 +782,9 @@ def compute_mama(df, fast_limit=0.5, slow_limit=0.05):
 def compute_indicator(df, param_a, param_b):
 	if INDICATOR_TYPE == "supertrend":
 		return compute_supertrend(df, length=int(param_a), factor=float(param_b))
+	if INDICATOR_TYPE == "htf_crossover":
+		# htf_crossover uses same logic as supertrend
+		return compute_supertrend(df, length=int(param_a), factor=float(param_b))
 	if INDICATOR_TYPE == "psar":
 		return compute_psar(df, step=float(param_a), max_step=float(param_b))
 	if INDICATOR_TYPE == "jma":
@@ -797,7 +810,7 @@ def attach_higher_timeframe_trend(df_low, symbol):
 		df_low["htf_indicator"] = np.nan
 		return df_low
 
-	if INDICATOR_TYPE == "supertrend":
+	if INDICATOR_TYPE == "supertrend" or INDICATOR_TYPE == "htf_crossover":
 		df_high_ind = compute_supertrend(df_high, length=HTF_LENGTH, factor=HTF_FACTOR)
 		indicator_col = "supertrend"
 		trend_col = "st_trend"
