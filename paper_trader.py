@@ -835,7 +835,13 @@ def load_best_rows(active_indicators: Optional[List[str]] = None) -> pd.DataFram
         raise FileNotFoundError(
             f"Overall summary file {BEST_PARAMS_CSV} not found. Run a parameter sweep first."
         )
-    df = pd.read_csv(BEST_PARAMS_CSV, sep=";", decimal=",")
+    # Try American format first (comma separator), fall back to European (semicolon)
+    try:
+        df = pd.read_csv(BEST_PARAMS_CSV)
+        if "Symbol" not in df.columns:
+            raise ValueError("Symbol column not found")
+    except (ValueError, pd.errors.ParserError):
+        df = pd.read_csv(BEST_PARAMS_CSV, sep=";", decimal=",")
     if df.empty:
         return df
     if active_indicators:
