@@ -83,7 +83,7 @@ RUN_PARAMETER_SWEEP = False
 RUN_SAVED_PARAMS = False
 RUN_OVERALL_BEST = True
 ENABLE_LONGS = True
-ENABLE_SHORTS = False
+ENABLE_SHORTS = True  # Restored: 705 short trades in simulation
 
 USE_MIN_HOLD_FILTER = True
 DEFAULT_MIN_HOLD_DAYS = 0
