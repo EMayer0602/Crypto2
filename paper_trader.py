@@ -1556,6 +1556,76 @@ def write_open_positions_report(positions: List[Dict], csv_path: str, json_path:
     _write_dataframe_outputs(df, csv_path, json_path, label="open positions")
 
 
+def calc_symbol_stats(trades_df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """Calculate per-symbol statistics including trades, PnL, win rate, drawdown, etc."""
+    if trades_df.empty or "symbol" not in trades_df.columns:
+        return []
+
+    symbol_stats = []
+
+    for symbol in sorted(trades_df["symbol"].unique()):
+        sym_df = trades_df[trades_df["symbol"] == symbol].copy()
+        if sym_df.empty:
+            continue
+
+        # Sort by exit_time for proper drawdown calculation
+        if "exit_time" in sym_df.columns:
+            sym_df = sym_df.sort_values("exit_time")
+
+        total_trades = len(sym_df)
+        pnl_series = sym_df["pnl"] if "pnl" in sym_df.columns else pd.Series([0.0])
+        total_pnl = float(pnl_series.sum())
+        avg_pnl = float(pnl_series.mean())
+
+        winners = len(sym_df[sym_df["pnl"] > 0]) if "pnl" in sym_df.columns else 0
+        losers = len(sym_df[sym_df["pnl"] < 0]) if "pnl" in sym_df.columns else 0
+        win_rate = (winners / total_trades * 100.0) if total_trades else 0.0
+
+        best_trade = float(pnl_series.max()) if not pnl_series.empty else 0.0
+        worst_trade = float(pnl_series.min()) if not pnl_series.empty else 0.0
+
+        # Calculate max drawdown from cumulative PnL
+        cumulative_pnl = pnl_series.cumsum()
+        running_max = cumulative_pnl.cummax()
+        drawdown = running_max - cumulative_pnl
+        max_drawdown = float(drawdown.max()) if not drawdown.empty else 0.0
+
+        # Long/Short breakdown
+        long_trades = len(sym_df[sym_df["direction"].str.lower() == "long"]) if "direction" in sym_df.columns else 0
+        short_trades = len(sym_df[sym_df["direction"].str.lower() == "short"]) if "direction" in sym_df.columns else 0
+
+        long_pnl = float(sym_df[sym_df["direction"].str.lower() == "long"]["pnl"].sum()) if "direction" in sym_df.columns and "pnl" in sym_df.columns else 0.0
+        short_pnl = float(sym_df[sym_df["direction"].str.lower() == "short"]["pnl"].sum()) if "direction" in sym_df.columns and "pnl" in sym_df.columns else 0.0
+
+        # Profit factor: gross profit / gross loss (avoid division by zero)
+        gross_profit = float(pnl_series[pnl_series > 0].sum()) if not pnl_series.empty else 0.0
+        gross_loss = abs(float(pnl_series[pnl_series < 0].sum())) if not pnl_series.empty else 0.0
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0.0
+
+        symbol_stats.append({
+            "symbol": symbol,
+            "trades": total_trades,
+            "winners": winners,
+            "losers": losers,
+            "win_rate": round(win_rate, 2),
+            "total_pnl": round(total_pnl, 2),
+            "avg_pnl": round(avg_pnl, 2),
+            "best_trade": round(best_trade, 2),
+            "worst_trade": round(worst_trade, 2),
+            "max_drawdown": round(max_drawdown, 2),
+            "profit_factor": round(profit_factor, 2) if profit_factor != float('inf') else "∞",
+            "long_trades": long_trades,
+            "short_trades": short_trades,
+            "long_pnl": round(long_pnl, 2),
+            "short_pnl": round(short_pnl, 2),
+        })
+
+    # Sort by total PnL descending (best symbols first)
+    symbol_stats.sort(key=lambda x: x["total_pnl"], reverse=True)
+
+    return symbol_stats
+
+
 def build_summary_payload(
     trades_df: pd.DataFrame,
     open_positions_df: pd.DataFrame,
@@ -1624,6 +1694,9 @@ def build_summary_payload(
     long_open_stats = calc_open_direction_stats(open_positions_df, "long")
     short_open_stats = calc_open_direction_stats(open_positions_df, "short")
 
+    # Per-symbol statistics
+    symbol_stats = calc_symbol_stats(trades_df)
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "start": start_ts.isoformat(),
@@ -1641,6 +1714,7 @@ def build_summary_payload(
         **short_stats,
         **long_open_stats,
         **short_open_stats,
+        "symbol_stats": symbol_stats,
     }
 
 
@@ -1699,6 +1773,35 @@ def generate_summary_html(
         "</table>",
         "</div>",
     ]
+
+    # Per-Symbol Statistics Table
+    symbol_stats = summary.get("symbol_stats", [])
+    if symbol_stats:
+        html_parts.append("<h2>Statistics by Symbol</h2>")
+        html_parts.append("<table>")
+        html_parts.append("<tr><th>Symbol</th><th>Trades</th><th>Win</th><th>Loss</th><th>Win%</th><th>Total PnL</th><th>Avg PnL</th><th>Best</th><th>Worst</th><th>Max DD</th><th>PF</th><th>Long</th><th>Short</th><th>Long PnL</th><th>Short PnL</th></tr>")
+        for ss in symbol_stats:
+            pnl_color = "green" if ss["total_pnl"] >= 0 else "red"
+            html_parts.append(
+                f"<tr>"
+                f"<td>{ss['symbol']}</td>"
+                f"<td>{ss['trades']}</td>"
+                f"<td>{ss['winners']}</td>"
+                f"<td>{ss['losers']}</td>"
+                f"<td>{ss['win_rate']:.1f}%</td>"
+                f"<td style='color:{pnl_color}'>{ss['total_pnl']:.2f}</td>"
+                f"<td>{ss['avg_pnl']:.2f}</td>"
+                f"<td style='color:green'>{ss['best_trade']:.2f}</td>"
+                f"<td style='color:red'>{ss['worst_trade']:.2f}</td>"
+                f"<td style='color:orange'>{ss['max_drawdown']:.2f}</td>"
+                f"<td>{ss['profit_factor']}</td>"
+                f"<td>{ss['long_trades']}</td>"
+                f"<td>{ss['short_trades']}</td>"
+                f"<td>{ss['long_pnl']:.2f}</td>"
+                f"<td>{ss['short_pnl']:.2f}</td>"
+                f"</tr>"
+            )
+        html_parts.append("</table>")
 
     if not trades_df.empty:
         full_cols = [c for c in [
@@ -2813,6 +2916,20 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
         generate_summary_html(summary_data, trades_df, open_df, summary_html_path)
         summary_json_path = args.summary_json or SIMULATION_SUMMARY_JSON
         write_summary_json(summary_data, summary_json_path)
+
+        # Print per-symbol statistics to console
+        symbol_stats = summary_data.get("symbol_stats", [])
+        if symbol_stats:
+            print("\n" + "=" * 120)
+            print("STATISTICS BY SYMBOL")
+            print("=" * 120)
+            print(f"{'Symbol':<12} {'Trades':>7} {'Win':>5} {'Loss':>5} {'Win%':>6} {'Total PnL':>12} {'Avg PnL':>10} {'Best':>10} {'Worst':>10} {'Max DD':>10} {'PF':>6}")
+            print("-" * 120)
+            for ss in symbol_stats:
+                pf_str = f"{ss['profit_factor']}" if ss['profit_factor'] != "∞" else "inf"
+                print(f"{ss['symbol']:<12} {ss['trades']:>7} {ss['winners']:>5} {ss['losers']:>5} {ss['win_rate']:>5.1f}% {ss['total_pnl']:>12.2f} {ss['avg_pnl']:>10.2f} {ss['best_trade']:>10.2f} {ss['worst_trade']:>10.2f} {ss['max_drawdown']:>10.2f} {pf_str:>6}")
+            print("=" * 120 + "\n")
+
         generate_trade_charts(trades_df, output_dir=os.path.join("report_html", "charts"))
         if open_positions:
             print(f"[Simulation] Open positions remaining: {len(open_positions)}")
