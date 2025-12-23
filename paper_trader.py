@@ -1285,6 +1285,15 @@ def process_snapshot(
         return trades
 
     entry_allowed, entry_reason = evaluate_entry(df_slice, context.direction)
+
+    # Debug: Count entry attempts for BTC/ETH
+    if context.symbol in ("BTC/EUR", "ETH/EUR"):
+        debug_key = f"_entry_count_{context.symbol}_{context.direction}"
+        count = getattr(evaluate_entry, debug_key, 0) + 1
+        setattr(evaluate_entry, debug_key, count)
+        if count <= 3:  # Show first 3 attempts
+            print(f"[DEBUG] {context.symbol} {context.direction}: entry_allowed={entry_allowed}, reason={entry_reason}")
+
     if not entry_allowed:
         if entry_reason:
             _signal_log(f"{context.symbol} {context.direction} entry skipped: {entry_reason}")
