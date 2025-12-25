@@ -1,8 +1,8 @@
 Symbol;Direction;Indicator;IndicatorDisplay;ParamA;ParamB;Length;Factor;ATRStopMult;ATRStopMultValue;MinHoldDays;OptimalExitBars;HTF;FinalEquity;Trades;WinRate;MaxDrawdown
 BTC/EUR;Long;jma;JMA;20;50;;;1,0;1,0;0;5;8h;15000;50;0,55;0,1
-BTC/EUR;Short;jma;JMA;20;50;;;1,0;1,0;0;5;6h;15000;50;0,55;0,1
+BTC/EUR;Short;kama;KAMA;20;50;;;1,0;1,0;0;5;6h;15000;50;0,55;0,1
 ETH/EUR;Long;jma;JMA;20;50;;;2,0;2,0;0;5;12h;15000;50;0,55;0,1
-ETH/EUR;Short;jma;JMA;20;50;;;1,0;1,0;0;2;6h;15000;50;0,55;0,1
+ETH/EUR;Short;kama;KAMA;20;50;;;1,0;1,0;0;2;6h;15000;50;0,55;0,1
 XRP/EUR;Long;jma;JMA;20;50;;;1,5;1,5;0;5;12h;15000;45;0,5;0,12
 XRP/EUR;Short;jma;JMA;20;50;;;1,5;1,5;0;2;4h;15000;45;0,5;0,12
 LINK/EUR;Long;jma;JMA;50;50;;;1,0;1,0;0;3;1h;15000;40;0,52;0,1
