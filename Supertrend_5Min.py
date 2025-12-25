@@ -9,7 +9,20 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
-from ta.volatility import AverageTrueRange
+try:
+    from ta.volatility import AverageTrueRange
+except ImportError:
+    class AverageTrueRange:
+        """Fallback ATR implementation when ta package is not available."""
+        def __init__(self, high, low, close, window=14):
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            self._atr = tr.rolling(window=window, min_periods=1).mean()
+
+        def average_true_range(self):
+            return self._atr
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -1623,6 +1636,7 @@ def run_parameter_sweep():
 				"ATRStopMult": atr_label,
 				"ATRStopMultValue": best_atr,
 				"MinHoldDays": best_hold_days,
+				"OptimalExitBars": 2,  # Default optimal exit after 2 bars for time-based exit
 				"HTF": HIGHER_TIMEFRAME,
 				"FinalEquity": final_equity,
 				"Trades": trades_count,

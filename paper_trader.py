@@ -22,7 +22,21 @@ import plotly.graph_objects as go
 
 import numpy as np
 import pandas as pd
-from ta.volatility import AverageTrueRange
+
+try:
+    from ta.volatility import AverageTrueRange
+except ImportError:
+    class AverageTrueRange:
+        """Fallback ATR implementation when ta package is not available."""
+        def __init__(self, high, low, close, window=14):
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            self._atr = tr.rolling(window=window, min_periods=1).mean()
+
+        def average_true_range(self):
+            return self._atr
 
 try:
     from twilio.rest import Client as TwilioClient # pyright: ignore[reportMissingImports]
@@ -135,6 +149,7 @@ class Position:
     entry_atr: float
     stake: float
     size_units: float
+    optimal_exit_bars: Optional[int] = None
 
 
 @dataclass
@@ -147,6 +162,7 @@ class StrategyContext:
     param_b: float
     atr_mult: Optional[float]
     min_hold_bars: int
+    optimal_exit_bars: Optional[int] = None
 
     @property
     def key(self) -> str:
@@ -681,6 +697,8 @@ def build_strategy_context(row: pd.Series) -> StrategyContext:
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
     min_hold_bars = int(min_hold_days * st.BARS_PER_DAY)
+    optimal_exit_bars_raw = parse_float(row.get("OptimalExitBars"))
+    optimal_exit_bars = int(optimal_exit_bars_raw) if optimal_exit_bars_raw is not None else None
     return StrategyContext(
         symbol=symbol,
         direction=direction,
@@ -690,6 +708,7 @@ def build_strategy_context(row: pd.Series) -> StrategyContext:
         param_b=param_b,
         atr_mult=atr_mult,
         min_hold_bars=min_hold_bars,
+        optimal_exit_bars=optimal_exit_bars,
     )
 
 
@@ -958,7 +977,7 @@ def find_last_signal_bar(df: pd.DataFrame, direction: str, lookback_hours: float
     return ts, price, ts >= cutoff
 
 
-def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], min_hold_bars: int) -> Optional[Dict]:
+def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], min_hold_bars: int, optimal_exit_bars: Optional[int] = None) -> Optional[Dict]:
     if len(df) < 2:
         return None
     curr = df.iloc[-1]
@@ -991,6 +1010,12 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
     if exit_price is None and trend_flipped and bars_held >= max(0, min_hold_bars):
         exit_price = float(curr["close"])
         reason = "Trend flip"
+
+    # Time-based exit: exit after optimal number of bars
+    if exit_price is None and optimal_exit_bars is not None and optimal_exit_bars > 0:
+        if bars_held >= optimal_exit_bars:
+            exit_price = float(curr["close"])
+            reason = f"Time-based exit ({bars_held} bars, optimal={optimal_exit_bars})"
 
     if exit_price is None:
         return None
@@ -1033,7 +1058,7 @@ def process_snapshot(
     existing = find_position(state, context.key)
     if existing:
         prior_total = state["total_capital"]
-        exit_info = evaluate_exit(existing, df_slice, context.atr_mult, context.min_hold_bars)
+        exit_info = evaluate_exit(existing, df_slice, context.atr_mult, context.min_hold_bars, context.optimal_exit_bars)
         if exit_info:
             size_units = float(existing.get("size_units", 0.0))
             stake_val = float(existing.get("stake"))
@@ -1119,6 +1144,7 @@ def process_snapshot(
         entry_atr=float(df_slice.iloc[-1].get("atr", 0.0)),
         stake=stake,
         size_units=size_units,
+        optimal_exit_bars=context.optimal_exit_bars,
     )
     entry_record = dict(entry.__dict__)
     state.setdefault("positions", []).append(entry_record)
@@ -1226,6 +1252,8 @@ def _context_from_position(pos: Dict) -> StrategyContext:
     if param_b_val is None:
         param_b_val = float(st.DEFAULT_PARAM_B)
     min_hold_bars = int(pos.get("min_hold_bars", 0) or 0)
+    optimal_exit_bars_raw = parse_float(pos.get("optimal_exit_bars"))
+    optimal_exit_bars = int(optimal_exit_bars_raw) if optimal_exit_bars_raw is not None else None
     return StrategyContext(
         symbol=str(pos.get("symbol", "")).strip(),
         direction=str(pos.get("direction", "long")).strip().lower() or "long",
@@ -1235,6 +1263,7 @@ def _context_from_position(pos: Dict) -> StrategyContext:
         param_b=float(param_b_val),
         atr_mult=parse_float(pos.get("atr_mult")),
         min_hold_bars=min_hold_bars,
+        optimal_exit_bars=optimal_exit_bars,
     )
 
 
