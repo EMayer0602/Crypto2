@@ -304,13 +304,59 @@ def get_data_exchange():
 
 
 def _fetch_direct_ohlcv(symbol, timeframe, limit):
+	"""Fetch OHLCV data with pagination support for large requests."""
 	exchange = get_data_exchange()
-	buffer = max(50, limit // 5)
-	fetch_limit = limit + buffer
-	ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=fetch_limit)
+	BINANCE_MAX_LIMIT = 1000  # Binance API limit per request
 	cols = ["timestamp", "open", "high", "low", "close", "volume"]
-	df = pd.DataFrame(ohlcv, columns=cols)
+
+	if limit <= BINANCE_MAX_LIMIT:
+		# Simple fetch for small requests
+		buffer = max(50, limit // 5)
+		fetch_limit = min(limit + buffer, BINANCE_MAX_LIMIT)
+		ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=fetch_limit)
+		df = pd.DataFrame(ohlcv, columns=cols)
+		df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+		return df.set_index("timestamp").tail(limit)
+
+	# Pagination for large requests
+	tf_minutes = timeframe_to_minutes(timeframe)
+	tf_ms = tf_minutes * 60 * 1000
+	all_data = []
+	end_ts = None  # Start from now (most recent)
+	remaining = limit + 50  # Buffer for indicator warmup
+
+	while remaining > 0:
+		batch_limit = min(remaining, BINANCE_MAX_LIMIT)
+		try:
+			if end_ts is None:
+				ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=batch_limit)
+			else:
+				# Fetch older data using 'since' parameter (start of range)
+				since_ts = end_ts - (batch_limit * tf_ms)
+				ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ts, limit=batch_limit)
+		except Exception as exc:
+			print(f"[Warn] Pagination fetch error for {symbol}: {exc}")
+			break
+
+		if not ohlcv:
+			break
+
+		all_data = ohlcv + all_data  # Prepend older data
+		oldest_ts = ohlcv[0][0]
+		end_ts = oldest_ts
+		remaining -= len(ohlcv)
+
+		# Avoid infinite loop if API returns same data
+		if len(ohlcv) < batch_limit // 2:
+			break
+
+	if not all_data:
+		return pd.DataFrame(columns=cols[1:]).set_index(pd.DatetimeIndex([], name="timestamp"))
+
+	df = pd.DataFrame(all_data, columns=cols)
 	df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+	df = df.drop_duplicates(subset=["timestamp"], keep="last")
+	df = df.sort_values("timestamp")
 	return df.set_index("timestamp").tail(limit)
 
 
