@@ -698,7 +698,7 @@ def build_strategy_context(row: pd.Series) -> StrategyContext:
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
     min_hold_bars = int(min_hold_days * st.BARS_PER_DAY)
     optimal_exit_bars_raw = parse_float(row.get("OptimalExitBars"))
-    optimal_exit_bars = int(optimal_exit_bars_raw) if optimal_exit_bars_raw is not None else None
+    optimal_exit_bars = int(optimal_exit_bars_raw) if optimal_exit_bars_raw is not None else 2  # Default: exit after 2 bars
     return StrategyContext(
         symbol=symbol,
         direction=direction,
