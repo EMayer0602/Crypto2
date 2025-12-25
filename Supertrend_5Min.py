@@ -76,6 +76,7 @@ def timeframe_to_minutes(tf_str: str) -> int:
 EXCHANGE_ID = "binance"
 TIMEFRAME = "1h"
 LOOKBACK = 9000  # ~375 days for 1-year simulation
+OHLCV_CACHE_DIR = os.path.join(os.path.dirname(__file__), "ohlcv_cache")
 SYMBOLS = [
 	"BTC/EUR",
 	"ETH/EUR",
@@ -303,6 +304,39 @@ def get_data_exchange():
 	return _data_exchange
 
 
+def _cache_filename(symbol, timeframe):
+	"""Generate cache filename for symbol/timeframe pair."""
+	safe_symbol = symbol.replace("/", "_")
+	return os.path.join(OHLCV_CACHE_DIR, f"{safe_symbol}_{timeframe}.parquet")
+
+
+def _load_cached_ohlcv(symbol, timeframe):
+	"""Load cached OHLCV data if available."""
+	cache_file = _cache_filename(symbol, timeframe)
+	if not os.path.exists(cache_file):
+		return None
+	try:
+		df = pd.read_parquet(cache_file)
+		if df.index.tzinfo is None:
+			df.index = df.index.tz_localize(BERLIN_TZ)
+		else:
+			df.index = df.index.tz_convert(BERLIN_TZ)
+		return df
+	except Exception as exc:
+		print(f"[Cache] Failed to load {cache_file}: {exc}")
+		return None
+
+
+def _save_cached_ohlcv(symbol, timeframe, df):
+	"""Save OHLCV data to cache."""
+	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
+	cache_file = _cache_filename(symbol, timeframe)
+	try:
+		df.to_parquet(cache_file)
+	except Exception as exc:
+		print(f"[Cache] Failed to save {cache_file}: {exc}")
+
+
 def _fetch_direct_ohlcv(symbol, timeframe, limit):
 	"""Fetch OHLCV data with pagination support for large requests."""
 	exchange = get_data_exchange()
@@ -410,7 +444,41 @@ def fetch_data(symbol, timeframe, limit):
 		exchange = get_data_exchange()
 		supported_timeframes = getattr(exchange, "timeframes", {}) or {}
 		if timeframe in supported_timeframes:
-			cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
+			# Try to load from file cache first
+			cached_df = _load_cached_ohlcv(symbol, timeframe)
+			if cached_df is not None and not cached_df.empty:
+				# Check if we need to update with new data
+				last_cached_ts = cached_df.index.max()
+				now = pd.Timestamp.now(BERLIN_TZ)
+				tf_minutes = timeframe_to_minutes(timeframe)
+				gap_minutes = (now - last_cached_ts).total_seconds() / 60
+
+				if gap_minutes > tf_minutes * 2:
+					# Fetch new data since last cached timestamp
+					since_ms = int(last_cached_ts.timestamp() * 1000)
+					try:
+						ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ms, limit=1000)
+						if ohlcv:
+							cols = ["timestamp", "open", "high", "low", "close", "volume"]
+							new_df = pd.DataFrame(ohlcv, columns=cols)
+							new_df["timestamp"] = pd.to_datetime(new_df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+							new_df = new_df.set_index("timestamp")
+							# Merge with cached data
+							cached_df = pd.concat([cached_df, new_df])
+							cached_df = cached_df[~cached_df.index.duplicated(keep="last")]
+							cached_df = cached_df.sort_index()
+							_save_cached_ohlcv(symbol, timeframe, cached_df)
+							print(f"[Cache] Updated {symbol} {timeframe}: +{len(new_df)} bars")
+					except Exception as exc:
+						print(f"[Cache] Failed to fetch new data for {symbol}: {exc}")
+
+				cache_df = cached_df.tail(limit)
+			else:
+				# No cache, fetch all data
+				cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
+				if cache_df is not None and not cache_df.empty:
+					_save_cached_ohlcv(symbol, timeframe, cache_df)
+					print(f"[Cache] Saved {symbol} {timeframe}: {len(cache_df)} bars")
 		else:
 			target_minutes = timeframe_to_minutes(timeframe)
 			base_minutes = timeframe_to_minutes(TIMEFRAME)
