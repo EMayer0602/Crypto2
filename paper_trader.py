@@ -63,7 +63,7 @@ BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
 DEFAULT_FIXED_STAKE = None  # Use dynamic sizing unless explicitly overridden
 DEFAULT_ALLOWED_DIRECTIONS = ["long", "short"]
-DEFAULT_USE_TESTNET = True
+DEFAULT_USE_TESTNET = False  # Use False for simulation with dynamic stake
 SIGNAL_DEBUG = False
 DEFAULT_SIGNAL_INTERVAL_MIN = 15
 DEFAULT_SPIKE_INTERVAL_MIN = 5
@@ -2170,7 +2170,7 @@ def main(
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Paper trading runner for overall-best strategies")
     parser.add_argument("--simulate", action="store_true", help="Run a historical simulation instead of a single live tick")
-    parser.add_argument("--start", type=str, default=None, help="Simulation start timestamp (ISO, default: 24h before end)")
+    parser.add_argument("--start", type=str, default=None, help="Simulation start timestamp (ISO, default: 365 days before end)")
     parser.add_argument("--end", type=str, default=None, help="Simulation end timestamp (ISO, default: now)")
     parser.add_argument("--use-saved-state", action="store_true", help="Seed simulations with the saved JSON state instead of a fresh account")
     parser.add_argument("--sim-log", type=str, default=SIMULATION_LOG_FILE, help="CSV path for simulated trades")
@@ -2370,7 +2370,7 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
             }
         else:
             end_ts = resolve_timestamp(args.end, pd.Timestamp.now(tz=st.BERLIN_TZ))
-            default_start = end_ts - pd.Timedelta(days=1)
+            default_start = end_ts - pd.Timedelta(days=365)  # Default: 1 year simulation
             start_ts = resolve_timestamp(args.start, default_start)
             trades, final_state = run_simulation(
                 start_ts,
