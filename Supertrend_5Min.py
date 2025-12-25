@@ -62,7 +62,7 @@ def timeframe_to_minutes(tf_str: str) -> int:
 
 EXCHANGE_ID = "binance"
 TIMEFRAME = "1h"
-LOOKBACK = 720
+LOOKBACK = 9000  # ~375 days for 1-year simulation
 SYMBOLS = [
 	"BTC/EUR",
 	"ETH/EUR",
