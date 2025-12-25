@@ -1002,6 +1002,12 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
             exit_price = stop_price
             reason = f"ATR stop x{atr_mult:.2f}"
 
+    # Time-based exit: exit after optimal number of bars (higher priority than trend flip)
+    if exit_price is None and optimal_exit_bars is not None and optimal_exit_bars > 0:
+        if bars_held >= optimal_exit_bars:
+            exit_price = float(curr["close"])
+            reason = f"Time-based exit ({bars_held} bars, optimal={optimal_exit_bars})"
+
     trend_curr = int(curr["trend_flag"])
     trend_prev = int(prev["trend_flag"])
     flip_long = long_mode and trend_prev == 1 and trend_curr == -1
@@ -1010,12 +1016,6 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
     if exit_price is None and trend_flipped and bars_held >= max(0, min_hold_bars):
         exit_price = float(curr["close"])
         reason = "Trend flip"
-
-    # Time-based exit: exit after optimal number of bars
-    if exit_price is None and optimal_exit_bars is not None and optimal_exit_bars > 0:
-        if bars_held >= optimal_exit_bars:
-            exit_price = float(curr["close"])
-            reason = f"Time-based exit ({bars_held} bars, optimal={optimal_exit_bars})"
 
     if exit_price is None:
         return None
