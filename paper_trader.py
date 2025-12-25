@@ -1419,9 +1419,10 @@ def generate_summary_html(
     html_parts = [
         "<html><head><meta charset='utf-8'>",
         "<title>Paper Trading Simulation Summary</title>",
-        "<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:4px 8px;text-align:right;}th{text-align:center;background:#f0f0f0;}h1,h2{margin-bottom:0;}</style>",
+        "<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:4px 8px;text-align:right;}th{text-align:center;background:#f0f0f0;}h1,h2,h3{margin-bottom:0;margin-top:20px;}</style>",
         "</head><body>",
         f"<h1>Simulation Summary {summary['start']} → {summary['end']}</h1>",
+        "<h2>Overall Statistics</h2>",
         "<table>",
         "<tr><th>Metric</th><th>Value</th></tr>",
         f"<tr><td style='text-align:left'>Closed trades</td><td>{summary['closed_trades']}</td></tr>",
@@ -1435,6 +1436,56 @@ def generate_summary_html(
         f"<tr><td style='text-align:left'>Final capital (USDT)</td><td>{summary['final_capital']:.2f}</td></tr>",
         "</table>",
     ]
+
+    # Statistics by Direction
+    if not trades_df.empty and "direction" in trades_df.columns and "pnl" in trades_df.columns:
+        html_parts.append("<h2>Statistics by Direction</h2>")
+        for direction in ["Long", "Short"]:
+            dir_trades = trades_df[trades_df["direction"] == direction]
+            dir_open = open_positions_df[open_positions_df["direction"] == direction] if not open_positions_df.empty and "direction" in open_positions_df.columns else pd.DataFrame()
+            if dir_trades.empty:
+                continue
+            dir_pnl = dir_trades["pnl"].sum()
+            dir_avg = dir_trades["pnl"].mean()
+            dir_winners = len(dir_trades[dir_trades["pnl"] > 0])
+            dir_losers = len(dir_trades[dir_trades["pnl"] <= 0])
+            dir_winrate = (dir_winners / len(dir_trades) * 100) if len(dir_trades) > 0 else 0
+            dir_open_equity = dir_open["unrealized_pnl"].sum() if not dir_open.empty and "unrealized_pnl" in dir_open.columns else 0
+            html_parts.append(f"<h3>{direction} Statistics</h3>")
+            html_parts.append("<table>")
+            html_parts.append(f"<tr><td style='text-align:left'>Closed trades</td><td>{len(dir_trades)}</td></tr>")
+            html_parts.append(f"<tr><td style='text-align:left'>PnL (USDT)</td><td>{dir_pnl:.2f}</td></tr>")
+            html_parts.append(f"<tr><td style='text-align:left'>Avg PnL (USDT)</td><td>{dir_avg:.2f}</td></tr>")
+            html_parts.append(f"<tr><td style='text-align:left'>Win rate (%)</td><td>{dir_winrate:.2f}</td></tr>")
+            html_parts.append(f"<tr><td style='text-align:left'>Winners</td><td>{dir_winners}</td></tr>")
+            html_parts.append(f"<tr><td style='text-align:left'>Losers</td><td>{dir_losers}</td></tr>")
+            html_parts.append(f"<tr><td style='text-align:left'>Open positions</td><td>{len(dir_open)}</td></tr>")
+            html_parts.append(f"<tr><td style='text-align:left'>Open equity (USDT)</td><td>{dir_open_equity:.2f}</td></tr>")
+            html_parts.append("</table>")
+
+    # Statistics by Symbol
+    if not trades_df.empty and "symbol" in trades_df.columns and "pnl" in trades_df.columns:
+        html_parts.append("<h2>Statistics by Symbol</h2>")
+        html_parts.append("<table>")
+        html_parts.append("<tr><th>Symbol</th><th>Trades</th><th>Win</th><th>Loss</th><th>Win%</th><th>Total PnL</th><th>Avg PnL</th><th>Best</th><th>Worst</th><th>Long</th><th>Short</th><th>Long PnL</th><th>Short PnL</th></tr>")
+        for symbol in sorted(trades_df["symbol"].unique()):
+            sym_trades = trades_df[trades_df["symbol"] == symbol]
+            sym_pnl = sym_trades["pnl"].sum()
+            sym_avg = sym_trades["pnl"].mean()
+            sym_best = sym_trades["pnl"].max()
+            sym_worst = sym_trades["pnl"].min()
+            sym_winners = len(sym_trades[sym_trades["pnl"] > 0])
+            sym_losers = len(sym_trades[sym_trades["pnl"] <= 0])
+            sym_winrate = (sym_winners / len(sym_trades) * 100) if len(sym_trades) > 0 else 0
+            sym_long = sym_trades[sym_trades["direction"] == "Long"] if "direction" in sym_trades.columns else pd.DataFrame()
+            sym_short = sym_trades[sym_trades["direction"] == "Short"] if "direction" in sym_trades.columns else pd.DataFrame()
+            long_count = len(sym_long)
+            short_count = len(sym_short)
+            long_pnl = sym_long["pnl"].sum() if not sym_long.empty else 0
+            short_pnl = sym_short["pnl"].sum() if not sym_short.empty else 0
+            html_parts.append(f"<tr><td style='text-align:left'>{symbol}</td><td>{len(sym_trades)}</td><td>{sym_winners}</td><td>{sym_losers}</td><td>{sym_winrate:.1f}%</td><td>{sym_pnl:.2f}</td><td>{sym_avg:.2f}</td><td>{sym_best:.2f}</td><td>{sym_worst:.2f}</td><td>{long_count}</td><td>{short_count}</td><td>{long_pnl:.2f}</td><td>{short_pnl:.2f}</td></tr>")
+        html_parts.append("</table>")
+
     if not trades_df.empty:
         html_parts.append("<h2>Complete Closed Trades (with Entry and Exit)</h2>")
         full_cols = [c for c in [
