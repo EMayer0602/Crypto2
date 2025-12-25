@@ -1437,9 +1437,10 @@ def generate_summary_html(
         "</table>",
     ]
 
-    # Statistics by Direction
+    # Statistics by Direction (side by side)
     if not trades_df.empty and "direction" in trades_df.columns and "pnl" in trades_df.columns:
         html_parts.append("<h2>Statistics by Direction</h2>")
+        html_parts.append("<div style='display:flex;gap:40px;'>")
         for direction in ["Long", "Short"]:
             dir_trades = trades_df[trades_df["direction"] == direction]
             dir_open = open_positions_df[open_positions_df["direction"] == direction] if not open_positions_df.empty and "direction" in open_positions_df.columns else pd.DataFrame()
@@ -1451,6 +1452,7 @@ def generate_summary_html(
             dir_losers = len(dir_trades[dir_trades["pnl"] <= 0])
             dir_winrate = (dir_winners / len(dir_trades) * 100) if len(dir_trades) > 0 else 0
             dir_open_equity = dir_open["unrealized_pnl"].sum() if not dir_open.empty and "unrealized_pnl" in dir_open.columns else 0
+            html_parts.append("<div>")
             html_parts.append(f"<h3>{direction} Statistics</h3>")
             html_parts.append("<table>")
             html_parts.append(f"<tr><td style='text-align:left'>Closed trades</td><td>{len(dir_trades)}</td></tr>")
@@ -1462,6 +1464,8 @@ def generate_summary_html(
             html_parts.append(f"<tr><td style='text-align:left'>Open positions</td><td>{len(dir_open)}</td></tr>")
             html_parts.append(f"<tr><td style='text-align:left'>Open equity (USDT)</td><td>{dir_open_equity:.2f}</td></tr>")
             html_parts.append("</table>")
+            html_parts.append("</div>")
+        html_parts.append("</div>")
 
     # Statistics by Symbol
     if not trades_df.empty and "symbol" in trades_df.columns and "pnl" in trades_df.columns:
