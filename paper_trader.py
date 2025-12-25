@@ -692,7 +692,10 @@ def build_strategy_context(row: pd.Series) -> StrategyContext:
     symbol = row["Symbol"].strip()
     direction = row["Direction"].strip().lower()
     indicator_key = row["Indicator"].strip()
-    htf_value = str(row.get("HTF", st.HIGHER_TIMEFRAME) or st.HIGHER_TIMEFRAME).strip()
+    htf_raw = row.get("HTF", st.HIGHER_TIMEFRAME)
+    htf_value = str(htf_raw or st.HIGHER_TIMEFRAME).strip()
+    # DEBUG: Show what HTF value we're getting
+    print(f"[DEBUG] {symbol} {direction}: HTF raw='{htf_raw}' -> htf_value='{htf_value}'")
     param_a, param_b = normalize_params(row, indicator_key)
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
@@ -768,6 +771,11 @@ def load_best_rows(active_indicators: Optional[List[str]] = None) -> pd.DataFram
             f"Overall summary file {BEST_PARAMS_CSV} not found. Run a parameter sweep first."
         )
     df = pd.read_csv(BEST_PARAMS_CSV, sep=";", decimal=",")
+    # DEBUG: Show CSV structure
+    print(f"[DEBUG] CSV loaded from: {BEST_PARAMS_CSV}")
+    print(f"[DEBUG] CSV columns ({len(df.columns)}): {list(df.columns)}")
+    if not df.empty:
+        print(f"[DEBUG] First row values: {dict(df.iloc[0])}")
     if df.empty:
         return df
     if active_indicators:
