@@ -2170,7 +2170,7 @@ def main(
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Paper trading runner for overall-best strategies")
     parser.add_argument("--simulate", action="store_true", help="Run a historical simulation instead of a single live tick")
-    parser.add_argument("--start", type=str, default=None, help="Simulation start timestamp (ISO, default: 365 days before end)")
+    parser.add_argument("--start", type=str, default=None, help="Simulation start timestamp (ISO, default: 2025-01-01)")
     parser.add_argument("--end", type=str, default=None, help="Simulation end timestamp (ISO, default: now)")
     parser.add_argument("--use-saved-state", action="store_true", help="Seed simulations with the saved JSON state instead of a fresh account")
     parser.add_argument("--sim-log", type=str, default=SIMULATION_LOG_FILE, help="CSV path for simulated trades")
@@ -2370,7 +2370,7 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
             }
         else:
             end_ts = resolve_timestamp(args.end, pd.Timestamp.now(tz=st.BERLIN_TZ))
-            default_start = end_ts - pd.Timedelta(days=365)  # Default: 1 year simulation
+            default_start = pd.Timestamp("2025-01-01", tz=st.BERLIN_TZ)  # Default: start from Jan 1, 2025
             start_ts = resolve_timestamp(args.start, default_start)
             trades, final_state = run_simulation(
                 start_ts,
