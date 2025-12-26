@@ -2291,7 +2291,7 @@ if __name__ == "__main__":
 			apply_indicator_type(indicator_name)
 			for htf_value in htf_candidates:
 				apply_higher_timeframe(htf_value)
-				print(f"[Run] Indicator={INDICATOR_DISPLAY_NAME}, HTF={HIGHER_TIMEFRAME}")
+				print(f"\n[Run] Indicator={INDICATOR_DISPLAY_NAME}, HTF={HIGHER_TIMEFRAME}, MinHoldDays={MIN_HOLD_DAY_VALUES}, ATRMults={ATR_STOP_MULTS}")
 				summary_rows = run_current_configuration()
 				record_global_best(indicator_name, summary_rows)
 		write_overall_result_tables()
