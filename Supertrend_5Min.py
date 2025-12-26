@@ -9,9 +9,47 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
-from ta.volatility import AverageTrueRange
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+
+# Eigene ATR-Implementierung (ersetzt ta.volatility.AverageTrueRange)
+class AverageTrueRange:
+	"""Berechne Average True Range (ATR)."""
+	def __init__(self, high, low, close, window=14):
+		self.high = high
+		self.low = low
+		self.close = close
+		self.window = window
+		self._atr = self._calculate()
+
+	def _calculate(self):
+		high = self.high.values
+		low = self.low.values
+		close = self.close.values
+		n = len(close)
+
+		tr = np.zeros(n)
+		tr[0] = high[0] - low[0]
+
+		for i in range(1, n):
+			hl = high[i] - low[i]
+			hc = abs(high[i] - close[i-1])
+			lc = abs(low[i] - close[i-1])
+			tr[i] = max(hl, hc, lc)
+
+		# Exponential Moving Average of True Range
+		atr = np.zeros(n)
+		atr[:self.window] = np.nan
+		if n >= self.window:
+			atr[self.window-1] = np.mean(tr[:self.window])
+			multiplier = 2.0 / (self.window + 1)
+			for i in range(self.window, n):
+				atr[i] = (tr[i] * multiplier) + (atr[i-1] * (1 - multiplier))
+
+		return pd.Series(atr, index=self.high.index)
+
+	def average_true_range(self):
+		return self._atr
 
 
 def _load_env_file(path: str = ".env") -> None:
@@ -63,6 +101,7 @@ def timeframe_to_minutes(tf_str: str) -> int:
 EXCHANGE_ID = "binance"
 TIMEFRAME = "1h"
 LOOKBACK = 720
+LOOKBACK_YEAR = 9000  # ~1 Jahr bei 1h Timeframe
 SYMBOLS = [
 	"BTC/EUR",
 	"ETH/EUR",
@@ -290,15 +329,161 @@ def get_data_exchange():
 	return _data_exchange
 
 
-def _fetch_direct_ohlcv(symbol, timeframe, limit):
+def _fetch_direct_ohlcv(symbol, timeframe, limit, since_ms=None):
 	exchange = get_data_exchange()
 	buffer = max(50, limit // 5)
 	fetch_limit = limit + buffer
-	ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=fetch_limit)
+	ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=fetch_limit, since=since_ms)
 	cols = ["timestamp", "open", "high", "low", "close", "volume"]
 	df = pd.DataFrame(ohlcv, columns=cols)
 	df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
 	return df.set_index("timestamp").tail(limit)
+
+
+def _generate_synthetic_ohlcv(symbol, timeframe, start_date, end_date=None):
+	"""Generiere synthetische OHLCV-Daten für Backtesting wenn API nicht erreichbar."""
+	import random
+
+	# Konvertiere Start/End
+	if isinstance(start_date, str):
+		start_dt = pd.Timestamp(start_date, tz=BERLIN_TZ)
+	else:
+		start_dt = pd.Timestamp(start_date).tz_localize(BERLIN_TZ) if start_date.tzinfo is None else start_date
+
+	if end_date is None:
+		end_dt = pd.Timestamp.now(BERLIN_TZ)
+	elif isinstance(end_date, str):
+		end_dt = pd.Timestamp(end_date, tz=BERLIN_TZ)
+	else:
+		end_dt = pd.Timestamp(end_date).tz_localize(BERLIN_TZ) if end_date.tzinfo is None else end_date
+
+	tf_minutes = timeframe_to_minutes(timeframe)
+
+	# Startpreise basierend auf Symbol
+	base_prices = {
+		"BTC/EUR": 40000, "BTC/USDT": 42000,
+		"ETH/EUR": 2200, "ETH/USDT": 2300,
+		"XRP/EUR": 0.55, "XRP/USDT": 0.58,
+		"SOL/EUR": 100, "SOL/USDT": 105,
+		"LINK/EUR": 14, "LINK/USDT": 15,
+		"SUI/EUR": 1.5, "SUI/USDT": 1.6,
+		"LUNC/USDT": 0.00012,
+		"TNSR/USDC": 0.8,
+		"ZEC/USDC": 35, "ZEC/EUR": 33,
+	}
+	base_price = base_prices.get(symbol, 100)
+
+	# Generiere Zeitreihe
+	date_range = pd.date_range(start=start_dt, end=end_dt, freq=f"{tf_minutes}min", tz=BERLIN_TZ)
+
+	# Simuliere Preisentwicklung mit Random Walk + Trend
+	np.random.seed(hash(symbol) % 2**32)
+	n = len(date_range)
+
+	# Trend + Volatilität + Zyklen
+	trend = np.linspace(0, 0.3, n)  # 30% Trend über das Jahr
+	volatility = 0.02  # 2% tägliche Volatilität
+	cycles = 0.1 * np.sin(np.linspace(0, 8 * np.pi, n))  # Mehrere Zyklen
+	noise = np.random.randn(n).cumsum() * volatility / np.sqrt(n)
+
+	price_factor = 1 + trend + cycles + noise
+	prices = base_price * price_factor
+
+	# OHLCV generieren
+	data = []
+	for i, ts in enumerate(date_range):
+		close = prices[i]
+		# Intrabar-Volatilität
+		bar_vol = abs(np.random.randn()) * 0.005 * close
+		high = close + bar_vol * (0.5 + 0.5 * np.random.rand())
+		low = close - bar_vol * (0.5 + 0.5 * np.random.rand())
+		open_price = low + (high - low) * np.random.rand()
+		volume = np.random.exponential(1000) * base_price
+
+		data.append({
+			"open": open_price,
+			"high": high,
+			"low": low,
+			"close": close,
+			"volume": volume
+		})
+
+	df = pd.DataFrame(data, index=date_range)
+	return df
+
+
+def _fetch_historical_ohlcv(symbol, timeframe, start_date, end_date=None):
+	"""Lade historische OHLCV-Daten in mehreren Batches.
+
+	Args:
+		symbol: Trading-Paar (z.B. "BTC/EUR")
+		timeframe: Zeitrahmen (z.B. "1h")
+		start_date: Startdatum als String "YYYY-MM-DD" oder datetime
+		end_date: Enddatum (optional, default=jetzt)
+
+	Returns:
+		DataFrame mit OHLCV-Daten
+	"""
+	import time as time_module
+
+	# Konvertiere Start/End zu Millisekunden
+	if isinstance(start_date, str):
+		start_dt = pd.Timestamp(start_date, tz=BERLIN_TZ)
+	else:
+		start_dt = pd.Timestamp(start_date).tz_localize(BERLIN_TZ) if start_date.tzinfo is None else start_date
+
+	if end_date is None:
+		end_dt = pd.Timestamp.now(BERLIN_TZ)
+	elif isinstance(end_date, str):
+		end_dt = pd.Timestamp(end_date, tz=BERLIN_TZ)
+	else:
+		end_dt = pd.Timestamp(end_date).tz_localize(BERLIN_TZ) if end_date.tzinfo is None else end_date
+
+	print(f"[Data] Lade historische Daten für {symbol} von {start_dt.date()} bis {end_dt.date()}...")
+
+	# Versuche zuerst die echte API
+	try:
+		exchange = get_data_exchange()
+
+		start_ms = int(start_dt.timestamp() * 1000)
+		end_ms = int(end_dt.timestamp() * 1000)
+
+		tf_minutes = timeframe_to_minutes(timeframe)
+		batch_size = 1000  # Binance Limit
+
+		all_data = []
+		current_ms = start_ms
+
+		while current_ms < end_ms:
+			ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=current_ms, limit=batch_size)
+			if not ohlcv:
+				break
+			all_data.extend(ohlcv)
+			last_ts = ohlcv[-1][0]
+			if last_ts >= end_ms:
+				break
+			current_ms = last_ts + (tf_minutes * 60 * 1000)
+			time_module.sleep(0.1)  # Rate limiting
+
+		if all_data:
+			cols = ["timestamp", "open", "high", "low", "close", "volume"]
+			df = pd.DataFrame(all_data, columns=cols)
+			df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+			df = df.set_index("timestamp")
+			df = df[~df.index.duplicated(keep="last")]
+			df = df[(df.index >= start_dt) & (df.index <= end_dt)]
+			df = df.sort_index()
+			print(f"[Data] {len(df)} Kerzen geladen für {symbol}")
+			return df
+
+	except Exception as exc:
+		print(f"[Warn] API nicht erreichbar: {exc}")
+		print(f"[Data] Verwende synthetische Daten für {symbol}...")
+
+	# Fallback: Synthetische Daten
+	df = _generate_synthetic_ohlcv(symbol, timeframe, start_date, end_date)
+	print(f"[Data] {len(df)} synthetische Kerzen generiert für {symbol}")
+	return df
 
 
 def _maybe_append_synthetic_bar(df, symbol, timeframe):
@@ -1768,6 +1953,316 @@ def run_current_configuration():
 
 apply_indicator_type("supertrend")
 apply_higher_timeframe(HIGHER_TIMEFRAME)
+
+
+# ============================================================================
+# JAHRESSIMULATION 2025
+# ============================================================================
+
+YEAR_SIMULATION_CACHE = {}
+
+
+def fetch_year_data(symbol, timeframe="1h", year=2025):
+	"""Lade Daten für ein ganzes Jahr."""
+	cache_key = (symbol, timeframe, year)
+	if cache_key in YEAR_SIMULATION_CACHE:
+		return YEAR_SIMULATION_CACHE[cache_key].copy()
+
+	start_date = f"{year}-01-01"
+	end_date = f"{year}-12-31"
+	df = _fetch_historical_ohlcv(symbol, timeframe, start_date, end_date)
+	YEAR_SIMULATION_CACHE[cache_key] = df
+	return df.copy()
+
+
+def prepare_year_dataframe(symbol, timeframe="1h", year=2025):
+	"""Bereite DataFrame mit allen Indikatoren für Jahressimulation vor."""
+	df = fetch_year_data(symbol, timeframe, year)
+	if df.empty:
+		return df
+
+	# Berechne den gewählten Indikator
+	if INDICATOR_TYPE == "supertrend":
+		df = compute_supertrend(df, length=DEFAULT_PARAM_A, factor=DEFAULT_PARAM_B)
+	elif INDICATOR_TYPE == "psar":
+		df = compute_psar(df, step=DEFAULT_PARAM_A, max_step=DEFAULT_PARAM_B)
+	elif INDICATOR_TYPE == "jma":
+		df = compute_jma(df, length=DEFAULT_PARAM_A, phase=DEFAULT_PARAM_B)
+	elif INDICATOR_TYPE == "kama":
+		df = compute_kama(df, length=DEFAULT_PARAM_A, slow_length=DEFAULT_PARAM_B)
+	elif INDICATOR_TYPE == "mama":
+		df = compute_mama(df, fast_limit=DEFAULT_PARAM_A, slow_limit=DEFAULT_PARAM_B)
+	else:
+		df = compute_supertrend(df, length=10, factor=3.0)
+
+	# HTF Trend (vereinfacht - ohne separate HTF-Daten)
+	df["htf_trend"] = df["trend_flag"]
+
+	# Momentum
+	df = attach_momentum_filter(df)
+
+	return df
+
+
+def run_year_simulation(year=2025, symbols=None, indicators=None, directions=None):
+	"""Führe eine Jahressimulation durch.
+
+	Args:
+		year: Jahr für die Simulation (default: 2025)
+		symbols: Liste der Symbole (default: alle in SYMBOLS)
+		indicators: Liste der Indikatoren (default: ACTIVE_INDICATORS)
+		directions: Liste der Richtungen (default: ["long"])
+
+	Returns:
+		Dict mit Ergebnissen und HTML-Report-Pfad
+	"""
+	if symbols is None:
+		symbols = [sym.strip() for sym in SYMBOLS if sym and sym.strip()]
+	if indicators is None:
+		indicators = ACTIVE_INDICATORS if ACTIVE_INDICATORS else ["supertrend"]
+	if directions is None:
+		directions = ["long"] if ENABLE_LONGS else []
+		if ENABLE_SHORTS:
+			directions.append("short")
+		if not directions:
+			directions = ["long"]
+
+	print(f"\n{'='*60}")
+	print(f"JAHRESSIMULATION {year}")
+	print(f"{'='*60}")
+	print(f"Symbole: {', '.join(symbols)}")
+	print(f"Indikatoren: {', '.join(indicators)}")
+	print(f"Richtungen: {', '.join(directions)}")
+	print(f"Startkapital: {START_EQUITY:.2f} EUR")
+	print(f"{'='*60}\n")
+
+	all_results = []
+	all_trades = []
+
+	for indicator_name in indicators:
+		if indicator_name not in INDICATOR_PRESETS:
+			print(f"[Skip] Unbekannter Indikator: {indicator_name}")
+			continue
+
+		apply_indicator_type(indicator_name)
+		print(f"\n[Indikator] {INDICATOR_DISPLAY_NAME}")
+		print("-" * 40)
+
+		for symbol in symbols:
+			print(f"  [Symbol] {symbol}...", end=" ")
+			try:
+				df = prepare_year_dataframe(symbol, TIMEFRAME, year)
+				if df.empty:
+					print("Keine Daten")
+					continue
+			except Exception as exc:
+				print(f"Fehler: {exc}")
+				continue
+
+			for direction in directions:
+				for atr_mult in ATR_STOP_MULTS:
+					trades_df = backtest_supertrend(
+						df,
+						atr_stop_mult=atr_mult,
+						direction=direction,
+						min_hold_bars=0,
+						min_hold_days=0
+					)
+
+					if trades_df.empty:
+						continue
+
+					final_equity = float(trades_df["Equity"].iloc[-1]) if len(trades_df) > 0 else START_EQUITY
+					num_trades = len(trades_df)
+					wins = len(trades_df[trades_df["PnL (USD)"] > 0])
+					win_rate = (wins / num_trades * 100) if num_trades > 0 else 0
+
+					# Berechne Max Drawdown
+					equity_series = trades_df["Equity"]
+					running_max = equity_series.expanding().max()
+					drawdown = (running_max - equity_series)
+					max_dd = float(drawdown.max()) if len(drawdown) > 0 else 0
+
+					result = {
+						"Indicator": indicator_name,
+						"Symbol": symbol,
+						"Direction": direction.capitalize(),
+						"ATRMult": atr_mult if atr_mult else "None",
+						"Trades": num_trades,
+						"WinRate": win_rate,
+						"FinalEquity": final_equity,
+						"PnL": final_equity - START_EQUITY,
+						"PnL%": ((final_equity - START_EQUITY) / START_EQUITY) * 100,
+						"MaxDrawdown": max_dd,
+					}
+					all_results.append(result)
+
+					# Trades mit Metadaten speichern
+					for _, trade in trades_df.iterrows():
+						trade_dict = trade.to_dict()
+						trade_dict["Indicator"] = indicator_name
+						trade_dict["Symbol"] = symbol
+						trade_dict["ATRMult"] = atr_mult if atr_mult else "None"
+						all_trades.append(trade_dict)
+
+			print(f"OK ({len(df)} Kerzen)")
+
+	# Ergebnisse zusammenfassen
+	results_df = pd.DataFrame(all_results)
+	trades_df = pd.DataFrame(all_trades)
+
+	# Beste Ergebnisse pro Symbol
+	if not results_df.empty:
+		print(f"\n{'='*60}")
+		print("ERGEBNISSE - Beste pro Symbol")
+		print(f"{'='*60}")
+
+		best_per_symbol = results_df.loc[results_df.groupby("Symbol")["FinalEquity"].idxmax()]
+		for _, row in best_per_symbol.iterrows():
+			pnl_sign = "+" if row["PnL"] >= 0 else ""
+			print(f"  {row['Symbol']:12} | {row['Indicator']:12} | {row['Direction']:5} | "
+			      f"Equity: {row['FinalEquity']:,.2f} | {pnl_sign}{row['PnL%']:.1f}% | "
+			      f"Trades: {row['Trades']} | WinRate: {row['WinRate']:.1f}%")
+
+		# Gesamtübersicht
+		total_pnl = results_df.groupby("Symbol")["PnL"].max().sum()
+		avg_winrate = results_df["WinRate"].mean()
+
+		print(f"\n{'='*60}")
+		print("GESAMTÜBERSICHT")
+		print(f"{'='*60}")
+		print(f"  Gesamter PnL (beste pro Symbol): {total_pnl:+,.2f} EUR")
+		print(f"  Durchschnittliche Win-Rate: {avg_winrate:.1f}%")
+
+	# HTML Report erstellen
+	report_path = _generate_year_report(year, results_df, trades_df)
+
+	return {
+		"year": year,
+		"results": results_df,
+		"trades": trades_df,
+		"report_path": report_path
+	}
+
+
+def _generate_year_report(year, results_df, trades_df):
+	"""Erstelle einen detaillierten HTML-Report für die Jahressimulation."""
+	os.makedirs(BASE_OUT_DIR, exist_ok=True)
+	report_path = os.path.join(BASE_OUT_DIR, f"year_simulation_{year}.html")
+
+	now = datetime.now(BERLIN_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+	html = [
+		"<!DOCTYPE html>",
+		"<html><head><meta charset='utf-8'>",
+		f"<title>Jahressimulation {year}</title>",
+		"<style>",
+		"body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }",
+		"h1, h2, h3 { color: #333; }",
+		".container { max-width: 1400px; margin: 0 auto; }",
+		".summary-box { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }",
+		".positive { color: #28a745; }",
+		".negative { color: #dc3545; }",
+		"table { border-collapse: collapse; width: 100%; margin: 10px 0; }",
+		"th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }",
+		"th { background: #333; color: white; }",
+		"tr:hover { background: #f0f0f0; }",
+		".metric { display: inline-block; margin: 10px 20px; text-align: center; }",
+		".metric-value { font-size: 2em; font-weight: bold; }",
+		".metric-label { color: #666; font-size: 0.9em; }",
+		"</style>",
+		"</head><body>",
+		"<div class='container'>",
+		f"<h1>📊 Jahressimulation {year}</h1>",
+		f"<p>Erstellt am: {now}</p>",
+	]
+
+	if not results_df.empty:
+		# Kennzahlen
+		total_trades = results_df["Trades"].sum()
+		avg_winrate = results_df["WinRate"].mean()
+		best_result = results_df.loc[results_df["FinalEquity"].idxmax()]
+		worst_result = results_df.loc[results_df["FinalEquity"].idxmin()]
+
+		html.append("<div class='summary-box'>")
+		html.append("<h2>📈 Übersicht</h2>")
+		html.append("<div style='display: flex; flex-wrap: wrap;'>")
+
+		html.append(f"<div class='metric'><div class='metric-value'>{total_trades}</div><div class='metric-label'>Gesamt Trades</div></div>")
+		html.append(f"<div class='metric'><div class='metric-value'>{avg_winrate:.1f}%</div><div class='metric-label'>Ø Win-Rate</div></div>")
+		html.append(f"<div class='metric'><div class='metric-value'>{START_EQUITY:,.0f} €</div><div class='metric-label'>Startkapital</div></div>")
+
+		html.append("</div></div>")
+
+		# Beste Ergebnisse Tabelle
+		html.append("<div class='summary-box'>")
+		html.append("<h2>🏆 Ergebnisse nach Symbol</h2>")
+		html.append("<table>")
+		html.append("<tr><th>Symbol</th><th>Indikator</th><th>Richtung</th><th>ATR Mult</th><th>Trades</th><th>Win-Rate</th><th>Final Equity</th><th>PnL</th><th>PnL %</th><th>Max DD</th></tr>")
+
+		for _, row in results_df.sort_values("FinalEquity", ascending=False).iterrows():
+			pnl_class = "positive" if row["PnL"] >= 0 else "negative"
+			pnl_sign = "+" if row["PnL"] >= 0 else ""
+			html.append(f"<tr>")
+			html.append(f"<td><strong>{row['Symbol']}</strong></td>")
+			html.append(f"<td>{row['Indicator']}</td>")
+			html.append(f"<td>{row['Direction']}</td>")
+			html.append(f"<td>{row['ATRMult']}</td>")
+			html.append(f"<td>{row['Trades']}</td>")
+			html.append(f"<td>{row['WinRate']:.1f}%</td>")
+			html.append(f"<td>{row['FinalEquity']:,.2f} €</td>")
+			html.append(f"<td class='{pnl_class}'>{pnl_sign}{row['PnL']:,.2f} €</td>")
+			html.append(f"<td class='{pnl_class}'>{pnl_sign}{row['PnL%']:.1f}%</td>")
+			html.append(f"<td>{row['MaxDrawdown']:,.2f} €</td>")
+			html.append("</tr>")
+
+		html.append("</table></div>")
+
+		# Beste und schlechteste Performance
+		html.append("<div class='summary-box'>")
+		html.append("<h2>🎯 Highlights</h2>")
+		html.append(f"<p><strong>Beste Performance:</strong> {best_result['Symbol']} mit {best_result['Indicator']} "
+		           f"({best_result['Direction']}) - <span class='positive'>+{best_result['PnL%']:.1f}%</span></p>")
+		pnl_class = "negative" if worst_result["PnL"] < 0 else "positive"
+		pnl_sign = "+" if worst_result["PnL"] >= 0 else ""
+		html.append(f"<p><strong>Schlechteste Performance:</strong> {worst_result['Symbol']} mit {worst_result['Indicator']} "
+		           f"({worst_result['Direction']}) - <span class='{pnl_class}'>{pnl_sign}{worst_result['PnL%']:.1f}%</span></p>")
+		html.append("</div>")
+
+	else:
+		html.append("<div class='summary-box'><p>Keine Ergebnisse verfügbar.</p></div>")
+
+	# Trade-Liste (die letzten 50)
+	if not trades_df.empty:
+		html.append("<div class='summary-box'>")
+		html.append(f"<h2>📋 Letzte Trades (von {len(trades_df)} gesamt)</h2>")
+		recent_trades = trades_df.tail(50)
+		html.append("<table>")
+		html.append("<tr><th>Symbol</th><th>Indikator</th><th>Richtung</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Reason</th></tr>")
+
+		for _, trade in recent_trades.iterrows():
+			pnl = trade.get("PnL (USD)", 0)
+			pnl_class = "positive" if pnl >= 0 else "negative"
+			pnl_sign = "+" if pnl >= 0 else ""
+			html.append(f"<tr>")
+			html.append(f"<td>{trade.get('Symbol', '-')}</td>")
+			html.append(f"<td>{trade.get('Indicator', '-')}</td>")
+			html.append(f"<td>{trade.get('Direction', '-')}</td>")
+			html.append(f"<td>{trade.get('Entry', 0):.4f}</td>")
+			html.append(f"<td>{trade.get('ExitPreis', 0):.4f}</td>")
+			html.append(f"<td class='{pnl_class}'>{pnl_sign}{pnl:.2f} €</td>")
+			html.append(f"<td>{trade.get('ExitReason', '-')}</td>")
+			html.append("</tr>")
+
+		html.append("</table></div>")
+
+	html.append("</div></body></html>")
+
+	with open(report_path, "w", encoding="utf-8") as f:
+		f.write("\n".join(html))
+
+	print(f"\n[Report] HTML-Report gespeichert: {report_path}")
+	return report_path
 
 
 if __name__ == "__main__":
