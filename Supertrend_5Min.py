@@ -1715,11 +1715,15 @@ def run_parameter_sweep():
 	directions = get_enabled_directions()
 	hold_day_candidates = MIN_HOLD_DAY_VALUES if USE_MIN_HOLD_FILTER else [DEFAULT_MIN_HOLD_DAYS]
 
-	for symbol in SYMBOLS:
+	total_symbols = len(SYMBOLS)
+	for sym_idx, symbol in enumerate(SYMBOLS, 1):
+		print(f"\n  [{sym_idx}/{total_symbols}] {symbol}")
 		df_raw = prepare_symbol_dataframe(symbol)
 		results = {d: [] for d in directions}
 		trades_per_combo = {d: {} for d in directions}
 		df_cache = {}
+		combo_count = 0
+		total_combos = len(PARAM_A_VALUES) * len(PARAM_B_VALUES) * len(ATR_STOP_MULTS) * len(hold_day_candidates) * len(directions)
 
 		for param_a in PARAM_A_VALUES:
 			for param_b in PARAM_B_VALUES:
@@ -1758,6 +1762,9 @@ def run_parameter_sweep():
 							stats["MinHoldBars"] = min_hold_bars
 							results[direction].append(stats)
 							trades_per_combo[direction][(param_a, param_b, atr_mult, hold_days)] = trades
+							combo_count += 1
+							pnl = stats.get("FinalEquity", START_EQUITY) - START_EQUITY
+							print(f"    {combo_count}/{total_combos} | {PARAM_A_LABEL}={param_a}, {PARAM_B_LABEL}={param_b}, ATR={atr_mult}, Hold={hold_days}d, {direction} -> PnL: {pnl:+.2f}", flush=True)
 
 		for direction in directions:
 			dir_results = results[direction]
