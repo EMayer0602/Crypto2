@@ -529,9 +529,10 @@ def fetch_data(symbol, timeframe, limit):
 				use_synthesis = True
 
 		if use_synthesis and can_synthesize:
-			# Synthesize from base timeframe (1h)
+			# Synthesize from base timeframe (1h) - use ALL available data for full historical coverage
 			factor = target_minutes // base_minutes
-			base_limit = limit * factor + 100
+			# Fetch maximum available 1h data (not limited by HTF limit)
+			base_limit = max(limit * factor + 100, LOOKBACK)
 			base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
 			if not base_df_source.empty:
 				agg_rule = f"{target_minutes}min"
@@ -543,7 +544,8 @@ def fetch_data(symbol, timeframe, limit):
 					"volume": "sum",
 				})
 				synth = synth.dropna(subset=["open", "high", "low", "close"])
-				cache_df = synth.tail(limit)
+				# Keep ALL synthesized data, don't truncate with tail()
+				cache_df = synth
 				print(f"[Cache] Synthesized {symbol} {timeframe} from 1h: {len(cache_df)} bars, {cache_df.index.min()} to {cache_df.index.max()}")
 		elif timeframe in supported_timeframes:
 			# Try to load from file cache first
