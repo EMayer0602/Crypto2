@@ -239,6 +239,13 @@ OUT_DIR = BASE_OUT_DIR
 REPORT_FILE = "supertrend_report.html"
 BEST_PARAMS_FILE = "best_params.csv"
 
+# Lade lokale Konfiguration (überschreibt obige Werte)
+try:
+	from config_local import *
+	print("[Config] Lokale Konfiguration aus config_local.py geladen")
+except ImportError:
+	pass  # config_local.py existiert nicht - verwende Standardwerte
+
 _exchange = None
 _data_exchange = None
 DATA_CACHE = {}
