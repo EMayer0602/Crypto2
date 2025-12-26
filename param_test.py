@@ -64,24 +64,29 @@ def modify_htf(htf_value: str):
 
 
 def run_simulation():
-    """Run simulation and extract key metrics."""
+    """Run simulation and extract key metrics from JSON output."""
+    import json
+
     result = subprocess.run(
         ["python", "paper_trader.py", "--simulate", "--clear-outputs", "--reset-state"],
         capture_output=True,
         text=True
     )
-    output = result.stdout + result.stderr
 
-    # Extract metrics from output
-    pnl_match = re.search(r"Closed PnL.*?(-?[\d,.]+)", output)
-    trades_match = re.search(r"Closed trades.*?(\d+)", output)
-    winrate_match = re.search(r"Win rate.*?([\d.]+)", output)
+    # Read results from JSON file
+    json_path = "paper_trading_simulation_summary.json"
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-    pnl = float(pnl_match.group(1).replace(",", "")) if pnl_match else 0
-    trades = int(trades_match.group(1)) if trades_match else 0
-    winrate = float(winrate_match.group(1)) if winrate_match else 0
+        pnl = float(data.get("closed_pnl", 0))
+        trades = int(data.get("closed_trades", 0))
+        winrate = float(data.get("win_rate", 0))
 
-    return {"pnl": pnl, "trades": trades, "winrate": winrate}
+        return {"pnl": pnl, "trades": trades, "winrate": winrate}
+    except Exception as e:
+        print(f"[Error] Could not read results: {e}")
+        return {"pnl": 0, "trades": 0, "winrate": 0}
 
 
 def test_atr_values():
