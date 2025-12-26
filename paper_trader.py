@@ -1494,11 +1494,44 @@ def generate_summary_html(
         html_parts.append("</table>")
 
     if not trades_df.empty:
-        html_parts.append("<h2>Complete Closed Trades (with Entry and Exit)</h2>")
         full_cols = [c for c in [
-            "symbol","direction","indicator","htf","entry_time","entry_price","exit_time","exit_price","stake","pnl","reason"
+            "symbol","indicator","htf","entry_time","entry_price","exit_time","exit_price","stake","pnl","reason"
         ] if c in trades_df.columns]
-        html_parts.append(trades_df[full_cols].to_html(index=False, float_format="{:.8f}".format))
+
+        # Separate Long and Short trades
+        dir_col = "direction" if "direction" in trades_df.columns else None
+        if dir_col:
+            long_trades = trades_df[trades_df[dir_col].str.lower() == "long"]
+            short_trades = trades_df[trades_df[dir_col].str.lower() == "short"]
+        else:
+            long_trades = trades_df
+            short_trades = pd.DataFrame()
+
+        html_parts.append("<div style='display:flex;gap:20px;flex-wrap:wrap;'>")
+
+        # Long trades table
+        html_parts.append("<div style='flex:1;min-width:400px;'>")
+        html_parts.append(f"<h2>Long Trades ({len(long_trades)})</h2>")
+        if not long_trades.empty:
+            long_pnl = long_trades["pnl"].sum() if "pnl" in long_trades.columns else 0
+            html_parts.append(f"<p><strong>Total PnL: {long_pnl:.2f} USDT</strong></p>")
+            html_parts.append(long_trades[full_cols].to_html(index=False, float_format="{:.4f}".format))
+        else:
+            html_parts.append("<p>No long trades</p>")
+        html_parts.append("</div>")
+
+        # Short trades table
+        html_parts.append("<div style='flex:1;min-width:400px;'>")
+        html_parts.append(f"<h2>Short Trades ({len(short_trades)})</h2>")
+        if not short_trades.empty:
+            short_pnl = short_trades["pnl"].sum() if "pnl" in short_trades.columns else 0
+            html_parts.append(f"<p><strong>Total PnL: {short_pnl:.2f} USDT</strong></p>")
+            html_parts.append(short_trades[full_cols].to_html(index=False, float_format="{:.4f}".format))
+        else:
+            html_parts.append("<p>No short trades</p>")
+        html_parts.append("</div>")
+
+        html_parts.append("</div>")
     if not open_positions_df.empty:
         html_parts.append("<h2>Open positions</h2>")
         html_parts.append(open_positions_df.to_html(index=False, float_format="{:.8f}".format))

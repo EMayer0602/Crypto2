@@ -307,20 +307,35 @@ def get_data_exchange():
 def _cache_filename(symbol, timeframe):
 	"""Generate cache filename for symbol/timeframe pair."""
 	safe_symbol = symbol.replace("/", "_")
-	return os.path.join(OHLCV_CACHE_DIR, f"{safe_symbol}_{timeframe}.parquet")
+	return os.path.join(OHLCV_CACHE_DIR, f"{safe_symbol}_{timeframe}.csv")
 
 
 def _load_cached_ohlcv(symbol, timeframe):
-	"""Load cached OHLCV data if available."""
+	"""Load cached OHLCV data from CSV if available."""
 	cache_file = _cache_filename(symbol, timeframe)
 	if not os.path.exists(cache_file):
 		return None
 	try:
-		df = pd.read_parquet(cache_file)
-		if df.index.tzinfo is None:
-			df.index = df.index.tz_localize(BERLIN_TZ)
+		df = pd.read_csv(cache_file, sep=";", decimal=",")
+		# Handle timestamp column
+		if "timestamp" in df.columns:
+			df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(BERLIN_TZ)
+			df = df.set_index("timestamp")
+		elif "time" in df.columns:
+			df["time"] = pd.to_datetime(df["time"], utc=True).dt.tz_convert(BERLIN_TZ)
+			df = df.set_index("time")
 		else:
-			df.index = df.index.tz_convert(BERLIN_TZ)
+			# Try first column as index
+			df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], utc=True).dt.tz_convert(BERLIN_TZ)
+			df = df.set_index(df.columns[0])
+
+		# Ensure numeric columns
+		for col in ["open", "high", "low", "close", "volume"]:
+			if col in df.columns:
+				df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors="coerce")
+
+		df = df.sort_index()
+		print(f"[Cache] Loaded {symbol} {timeframe}: {len(df)} bars, {df.index.min()} to {df.index.max()}")
 		return df
 	except Exception as exc:
 		print(f"[Cache] Failed to load {cache_file}: {exc}")
@@ -328,11 +343,14 @@ def _load_cached_ohlcv(symbol, timeframe):
 
 
 def _save_cached_ohlcv(symbol, timeframe, df):
-	"""Save OHLCV data to cache."""
+	"""Save OHLCV data to CSV cache."""
 	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
 	cache_file = _cache_filename(symbol, timeframe)
 	try:
-		df.to_parquet(cache_file)
+		df_out = df.copy()
+		df_out.index.name = "timestamp"
+		df_out.to_csv(cache_file, sep=";", decimal=",")
+		print(f"[Cache] Saved {symbol} {timeframe}: {len(df)} bars")
 	except Exception as exc:
 		print(f"[Cache] Failed to save {cache_file}: {exc}")
 
