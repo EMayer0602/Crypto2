@@ -1,1 +1,12 @@
 __pycache__/
+
+# Trading state and output files
+paper_trading_actual_trades.csv
+paper_trading_actual_trades.json
+paper_trading_log.csv
+paper_trading_simulation_log.csv
+paper_trading_simulation_log.json
+paper_trading_state.json
+
+# Backup files
+report_html/best_params_overall_backup.csv
