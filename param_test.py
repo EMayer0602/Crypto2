@@ -5,9 +5,13 @@ import os
 import shutil
 import subprocess
 import re
+from datetime import datetime, timedelta
 
 CSV_PATH = os.path.join("report_html", "best_params_overall.csv")
 BACKUP_PATH = os.path.join("report_html", "best_params_overall_backup.csv")
+
+# Global simulation period (set via --months)
+SIM_START_DATE = None  # None = use default (2025-01-01)
 
 
 def backup_csv():
@@ -67,8 +71,12 @@ def run_simulation():
     """Run simulation and extract key metrics from JSON output."""
     import json
 
+    cmd = ["python", "paper_trader.py", "--simulate", "--clear-outputs", "--reset-state"]
+    if SIM_START_DATE:
+        cmd.extend(["--start", SIM_START_DATE])
+
     result = subprocess.run(
-        ["python", "paper_trader.py", "--simulate", "--clear-outputs", "--reset-state"],
+        cmd,
         capture_output=True,
         text=True
     )
@@ -153,20 +161,30 @@ def test_htf_values():
 
 if __name__ == "__main__":
     import sys
+    import argparse
 
-    if len(sys.argv) < 2:
-        print("Usage: python param_test.py [atr|htf|both]")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Parameter testing for ATR and HTF optimization")
+    parser.add_argument("test_type", choices=["atr", "htf", "both"], help="Test type to run")
+    parser.add_argument("--months", type=int, default=None, help="Simulate last N months (default: full year from Jan 1)")
+    args = parser.parse_args()
 
-    test_type = sys.argv[1].lower()
-
-    if test_type == "atr":
-        test_atr_values()
-    elif test_type == "htf":
-        test_htf_values()
-    elif test_type == "both":
-        test_atr_values()
-        test_htf_values()
+    # Set start date based on --months
+    sim_start = None
+    if args.months:
+        start_date = datetime.now() - timedelta(days=args.months * 30)
+        sim_start = start_date.strftime("%Y-%m-%d")
+        print(f"[Config] Simulation period: last {args.months} months (from {sim_start})")
     else:
-        print(f"Unknown test type: {test_type}")
-        print("Use: atr, htf, or both")
+        print("[Config] Simulation period: full year (from 2025-01-01)")
+
+    # Update module-level variable
+    import param_test
+    param_test.SIM_START_DATE = sim_start
+
+    if args.test_type == "atr":
+        test_atr_values()
+    elif args.test_type == "htf":
+        test_htf_values()
+    elif args.test_type == "both":
+        test_atr_values()
+        test_htf_values()
