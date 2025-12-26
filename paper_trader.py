@@ -1002,11 +1002,15 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
     exit_price = None
     reason = None
 
-    # Priority 1: Time-based exit (exit after optimal number of bars)
+    # Calculate current unrealized PnL for conditional exits
+    current_price = float(curr["close"])
+    unrealized_pnl = (current_price - entry_price) / entry_price * stake if long_mode else (entry_price - current_price) / entry_price * stake
+
+    # Priority 1: Time-based exit (only if in profit!)
     if optimal_exit_bars is not None and optimal_exit_bars > 0:
-        if bars_held >= optimal_exit_bars:
-            exit_price = float(curr["close"])
-            reason = f"Time-based exit ({bars_held} bars, optimal={optimal_exit_bars})"
+        if bars_held >= optimal_exit_bars and unrealized_pnl > 0:
+            exit_price = current_price
+            reason = f"Time-based exit ({bars_held} bars, optimal={optimal_exit_bars}, pnl={unrealized_pnl:.2f})"
 
     # Priority 2: ATR stop loss
     if exit_price is None and atr_mult is not None and entry_atr > 0:
