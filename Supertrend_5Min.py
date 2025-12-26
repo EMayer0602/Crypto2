@@ -362,11 +362,9 @@ def _load_cached_ohlcv(symbol, timeframe):
 		if ts_col:
 			print(f"[Cache] Using timestamp column: {ts_col}")
 			print(f"[Cache] Sample timestamps: {df[ts_col].head(2).tolist()}")
-			df[ts_col] = pd.to_datetime(df[ts_col])
-			if df[ts_col].dt.tz is None:
-				df[ts_col] = df[ts_col].dt.tz_localize('UTC').dt.tz_convert(BERLIN_TZ)
-			else:
-				df[ts_col] = df[ts_col].dt.tz_convert(BERLIN_TZ)
+			# Parse with utc=True to handle mixed timezones properly
+			df[ts_col] = pd.to_datetime(df[ts_col], utc=True)
+			df[ts_col] = df[ts_col].dt.tz_convert(BERLIN_TZ)
 			df = df.set_index(ts_col)
 
 		# Ensure numeric columns - handle both comma and dot decimals
@@ -507,7 +505,47 @@ def fetch_data(symbol, timeframe, limit):
 		cache_df = None
 		exchange = get_data_exchange()
 		supported_timeframes = getattr(exchange, "timeframes", {}) or {}
-		if timeframe in supported_timeframes:
+
+		# For HTF timeframes, always try to synthesize from base 1h data first
+		# This ensures we have full historical coverage
+		target_minutes = timeframe_to_minutes(timeframe)
+		base_minutes = timeframe_to_minutes(TIMEFRAME)
+		can_synthesize = (target_minutes > base_minutes and target_minutes % base_minutes == 0)
+
+		# Check if we should synthesize instead of using direct cache
+		use_synthesis = False
+		if can_synthesize and timeframe != TIMEFRAME:
+			# Try to load HTF cache first
+			cached_df = _load_cached_ohlcv(symbol, timeframe)
+			if cached_df is not None and not cached_df.empty:
+				earliest_cached = cached_df.index.min()
+				# If HTF cache doesn't go back to at least 2025-01-01, synthesize from 1h
+				min_required_date = pd.Timestamp("2025-01-01", tz=BERLIN_TZ)
+				if earliest_cached > min_required_date:
+					print(f"[Cache] {symbol} {timeframe} only starts at {earliest_cached.date()}, will synthesize from 1h")
+					use_synthesis = True
+			else:
+				# No HTF cache, try to synthesize from base
+				use_synthesis = True
+
+		if use_synthesis and can_synthesize:
+			# Synthesize from base timeframe (1h)
+			factor = target_minutes // base_minutes
+			base_limit = limit * factor + 100
+			base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
+			if not base_df_source.empty:
+				agg_rule = f"{target_minutes}min"
+				synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
+					"open": "first",
+					"high": "max",
+					"low": "min",
+					"close": "last",
+					"volume": "sum",
+				})
+				synth = synth.dropna(subset=["open", "high", "low", "close"])
+				cache_df = synth.tail(limit)
+				print(f"[Cache] Synthesized {symbol} {timeframe} from 1h: {len(cache_df)} bars, {cache_df.index.min()} to {cache_df.index.max()}")
+		elif timeframe in supported_timeframes:
 			# Try to load from file cache first
 			cached_df = _load_cached_ohlcv(symbol, timeframe)
 			if cached_df is not None and not cached_df.empty:
