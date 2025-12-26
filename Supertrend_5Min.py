@@ -313,32 +313,78 @@ def _cache_filename(symbol, timeframe):
 def _load_cached_ohlcv(symbol, timeframe):
 	"""Load cached OHLCV data from CSV if available."""
 	cache_file = _cache_filename(symbol, timeframe)
+	print(f"[Cache] Looking for: {cache_file}")
 	if not os.path.exists(cache_file):
-		return None
-	try:
-		df = pd.read_csv(cache_file, sep=";", decimal=",")
-		# Handle timestamp column
-		if "timestamp" in df.columns:
-			df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(BERLIN_TZ)
-			df = df.set_index("timestamp")
-		elif "time" in df.columns:
-			df["time"] = pd.to_datetime(df["time"], utc=True).dt.tz_convert(BERLIN_TZ)
-			df = df.set_index("time")
+		print(f"[Cache] File not found: {cache_file}")
+		# Try alternative naming patterns
+		safe_symbol = symbol.replace("/", "_")
+		alt_patterns = [
+			os.path.join(OHLCV_CACHE_DIR, f"{safe_symbol}.csv"),
+			os.path.join(OHLCV_CACHE_DIR, f"{symbol.replace('/', '')}_{timeframe}.csv"),
+			os.path.join(OHLCV_CACHE_DIR, f"{symbol.replace('/', '')}_{timeframe}.csv".lower()),
+		]
+		for alt in alt_patterns:
+			if os.path.exists(alt):
+				print(f"[Cache] Found alternative: {alt}")
+				cache_file = alt
+				break
 		else:
-			# Try first column as index
-			df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], utc=True).dt.tz_convert(BERLIN_TZ)
-			df = df.set_index(df.columns[0])
+			return None
+	try:
+		# First peek at the file to understand format
+		with open(cache_file, 'r', encoding='utf-8') as f:
+			first_lines = [f.readline() for _ in range(3)]
+		print(f"[Cache] First line: {first_lines[0].strip()[:100]}")
 
-		# Ensure numeric columns
-		for col in ["open", "high", "low", "close", "volume"]:
+		# Detect delimiter
+		if '\t' in first_lines[0]:
+			sep = '\t'
+		elif ';' in first_lines[0]:
+			sep = ';'
+		else:
+			sep = ','
+		print(f"[Cache] Using delimiter: '{sep}'")
+
+		df = pd.read_csv(cache_file, sep=sep)
+		print(f"[Cache] Columns found: {list(df.columns)}")
+		print(f"[Cache] Shape: {df.shape}")
+
+		# Handle timestamp column - check various possible names
+		ts_col = None
+		for col_name in ["timestamp", "time", "datetime", "date", "Timestamp", "Time", "Date"]:
+			if col_name in df.columns:
+				ts_col = col_name
+				break
+		if ts_col is None and len(df.columns) > 0:
+			# First column might be unnamed timestamp
+			ts_col = df.columns[0]
+
+		if ts_col:
+			print(f"[Cache] Using timestamp column: {ts_col}")
+			print(f"[Cache] Sample timestamps: {df[ts_col].head(2).tolist()}")
+			df[ts_col] = pd.to_datetime(df[ts_col])
+			if df[ts_col].dt.tz is None:
+				df[ts_col] = df[ts_col].dt.tz_localize('UTC').dt.tz_convert(BERLIN_TZ)
+			else:
+				df[ts_col] = df[ts_col].dt.tz_convert(BERLIN_TZ)
+			df = df.set_index(ts_col)
+
+		# Ensure numeric columns - handle both comma and dot decimals
+		for col in ["open", "high", "low", "close", "volume", "Open", "High", "Low", "Close", "Volume"]:
 			if col in df.columns:
-				df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors="coerce")
+				if df[col].dtype == object:
+					df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors="coerce")
+
+		# Normalize column names to lowercase
+		df.columns = df.columns.str.lower()
 
 		df = df.sort_index()
 		print(f"[Cache] Loaded {symbol} {timeframe}: {len(df)} bars, {df.index.min()} to {df.index.max()}")
 		return df
 	except Exception as exc:
+		import traceback
 		print(f"[Cache] Failed to load {cache_file}: {exc}")
+		traceback.print_exc()
 		return None
 
 
