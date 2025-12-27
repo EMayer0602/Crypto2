@@ -633,6 +633,9 @@ def get_enabled_directions():
 
 
 def get_highertimeframe_candidates():
+	# Nutze HTF_CANDIDATES wenn in config_local.py definiert
+	if 'HTF_CANDIDATES' in globals() and HTF_CANDIDATES:
+		return HTF_CANDIDATES
 	return [f"{hours}h" for hours in range(3, 25)]
 
 

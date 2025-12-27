@@ -1,15 +1,20 @@
 # ============================================================================
-# SWEEP SETTINGS
+# SWEEP SETTINGS - FOKUSSIERT AUF BESTE PERFORMER
 # ============================================================================
 RUN_PARAMETER_SWEEP = True
 RUN_SAVED_PARAMS = False
 RUN_OVERALL_BEST = False
 
-# Welche Indikatoren testen?
-ACTIVE_INDICATORS = ["supertrend", "htf_crossover", "jma", "kama"]
+# NUR JMA und KAMA (beste Ergebnisse)
+ACTIVE_INDICATORS = ["jma", "kama"]
 
 # ============================================================================
-# FILTERS - NUR DIESE EXISTIEREN IM CODE
+# HTF TIMEFRAMES - NUR DIE BESTEN (4h, 6h, 8h, 12h statt 3h-24h)
+# ============================================================================
+HTF_CANDIDATES = ["4h", "6h", "8h", "12h"]
+
+# ============================================================================
+# FILTERS
 # ============================================================================
 USE_HIGHER_TIMEFRAME_FILTER = True
 USE_MIN_HOLD_FILTER = True
@@ -17,9 +22,14 @@ USE_MOMENTUM_FILTER = False
 USE_BREAKOUT_FILTER = False
 
 # ============================================================================
-# MIN HOLD VALUES ZUM TESTEN
+# MIN HOLD - FOKUS AUF 2 (optimal)
 # ============================================================================
-MIN_HOLD_DAY_VALUES = [0, 2, 5, 10]
+MIN_HOLD_DAY_VALUES = [0, 2]
+
+# ============================================================================
+# ATR STOPS - REDUZIERT
+# ============================================================================
+ATR_STOP_MULTS = [None, 1.5]
 
 # ============================================================================
 # TRADING DIRECTION
