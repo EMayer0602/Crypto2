@@ -558,7 +558,18 @@ def fetch_data(symbol, timeframe, limit):
 		exchange = get_data_exchange()
 		supported_timeframes = getattr(exchange, "timeframes", {}) or {}
 		if timeframe in supported_timeframes:
-			cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
+			# Binance limitiert auf ~1000 Bars pro Request
+			# Bei größerem limit verwende paginierte Funktion
+			if limit > 900:
+				tf_minutes = timeframe_to_minutes(timeframe)
+				# Berechne Startdatum basierend auf limit
+				now = pd.Timestamp.now(BERLIN_TZ)
+				start_date = now - pd.Timedelta(minutes=tf_minutes * limit)
+				cache_df = _fetch_historical_ohlcv(symbol, timeframe, start_date, now)
+				if cache_df is not None and not cache_df.empty:
+					cache_df = cache_df.tail(limit)
+			else:
+				cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
 		else:
 			target_minutes = timeframe_to_minutes(timeframe)
 			base_minutes = timeframe_to_minutes(TIMEFRAME)
