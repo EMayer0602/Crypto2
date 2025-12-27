@@ -2247,11 +2247,31 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
         order_executor = BinanceOrderExecutor(st.get_exchange())
         configure_exchange_flag = False
 
-    # Override LOOKBACK for simulations requiring more historical data
-    if args.lookback is not None and args.lookback > 0:
+    # Calculate LOOKBACK for simulations: from 2024-09-01 (warm-up) to now
+    # This ensures enough data for indicator warm-up before simulation starts
+    WARMUP_START = pd.Timestamp("2024-09-01", tz=st.BERLIN_TZ)
+    if args.simulate and args.lookback is None:
+        # Auto-calculate lookback from warm-up date to now
+        now = pd.Timestamp.now(tz=st.BERLIN_TZ)
+        hours_needed = int((now - WARMUP_START).total_seconds() / 3600) + 100  # buffer
+        if hours_needed > st.LOOKBACK:
+            original_lookback = st.LOOKBACK
+            st.LOOKBACK = hours_needed
+            # Also increase HTF_LOOKBACK proportionally for HTF indicator warm-up
+            htf_minutes = st.timeframe_to_minutes(st.HIGHER_TIMEFRAME)
+            htf_bars_needed = int(hours_needed * 60 / htf_minutes) + 50
+            if htf_bars_needed > st.HTF_LOOKBACK:
+                st.HTF_LOOKBACK = htf_bars_needed
+            print(f"[Config] LOOKBACK auto-set to {st.LOOKBACK} bars, HTF_LOOKBACK to {st.HTF_LOOKBACK} (from 2024-09-01 warm-up)")
+    elif args.lookback is not None and args.lookback > 0:
         original_lookback = st.LOOKBACK
         st.LOOKBACK = args.lookback
-        print(f"[Config] LOOKBACK set to {st.LOOKBACK} bars (was {original_lookback})")
+        # Also update HTF_LOOKBACK
+        htf_minutes = st.timeframe_to_minutes(st.HIGHER_TIMEFRAME)
+        htf_bars_needed = int(args.lookback * 60 / htf_minutes) + 50
+        if htf_bars_needed > st.HTF_LOOKBACK:
+            st.HTF_LOOKBACK = htf_bars_needed
+        print(f"[Config] LOOKBACK set to {st.LOOKBACK} bars, HTF_LOOKBACK to {st.HTF_LOOKBACK}")
 
     if args.simulate:
         trades: List[TradeResult] = []
