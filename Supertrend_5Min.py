@@ -1418,21 +1418,24 @@ def write_overall_result_tables():
 def write_combined_overall_best_report(sections):
 	if not sections:
 		return
-	best_per_symbol = {}
+	# Use (symbol, direction) as key to track best results for long and short separately
+	best_per_symbol_direction = {}
 	for item in sections:
 		symbol = item.get("symbol")
-		if not symbol:
+		direction = item.get("direction", "").lower()
+		if not symbol or direction not in {"long", "short"}:
 			continue
+		key = (symbol, direction)
 		value = item.get("final_equity")
 		try:
 			value = float(value)
 		except (TypeError, ValueError):
 			value = float("-inf")
-		current = best_per_symbol.get(symbol)
+		current = best_per_symbol_direction.get(key)
 		if current is None or value > current[0]:
-			best_per_symbol[symbol] = (value, item)
-	sections = [entry for (_, entry) in best_per_symbol.values()]
-	sections.sort(key=lambda item: item.get("symbol", ""))
+			best_per_symbol_direction[key] = (value, item)
+	sections = [entry for (_, entry) in best_per_symbol_direction.values()]
+	sections.sort(key=lambda item: (item.get("symbol", ""), item.get("direction", "")))
 	long_entries = [s for s in sections if s.get("direction", "").lower() == "long"]
 	short_entries = [s for s in sections if s.get("direction", "").lower() == "short"]
 	now = datetime.now(BERLIN_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
