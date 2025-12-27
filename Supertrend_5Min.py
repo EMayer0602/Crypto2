@@ -154,7 +154,7 @@ BREAKOUT_REQUIRE_DIRECTION = True
 
 START_EQUITY = 2000.0
 RISK_FRACTION = 1
-STAKE_DIVISOR = 1  # Dynamic stake: uses full equity for each trade
+STAKE_DIVISOR = 7  # Dynamic stake: uses 1/7 of equity per trade
 FEE_RATE = 0.001
 ATR_WINDOW = 14
 ATR_STOP_MULTS = [None, 1.0, 1.5, 2.0]
