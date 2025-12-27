@@ -6,7 +6,7 @@ RUN_SAVED_PARAMS = False
 RUN_OVERALL_BEST = False
 
 # Welche Indikatoren testen?
-ACTIVE_INDICATORS = ["jma", "kama", "supertrend"]
+ACTIVE_INDICATORS = ["supertrend", "htf_crossover", "jma", "kama"]
 
 # ============================================================================
 # FILTERS - NUR DIESE EXISTIEREN IM CODE

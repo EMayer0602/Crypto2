@@ -181,6 +181,16 @@ INDICATOR_PRESETS = {
 		"default_a": 10,
 		"default_b": 3.0,
 	},
+	"htf_crossover": {
+		"display_name": "HTF Crossover",
+		"slug": "htf_crossover",
+		"param_a_label": "Length",
+		"param_b_label": "Factor",
+		"param_a_values": [7, 10, 14],
+		"param_b_values": [2.0, 3.0, 4.0],
+		"default_a": 10,
+		"default_b": 3.0,
+	},
 	"psar": {
 		"display_name": "Parabolic SAR",
 		"slug": "psar",
@@ -881,6 +891,9 @@ def compute_mama(df, fast_limit=0.5, slow_limit=0.05):
 def compute_indicator(df, param_a, param_b):
 	if INDICATOR_TYPE == "supertrend":
 		return compute_supertrend(df, length=int(param_a), factor=float(param_b))
+	if INDICATOR_TYPE == "htf_crossover":
+		# HTF Crossover verwendet Supertrend-Berechnung, aber mit Crossover-Filter im Backtest
+		return compute_supertrend(df, length=int(param_a), factor=float(param_b))
 	if INDICATOR_TYPE == "psar":
 		return compute_psar(df, step=float(param_a), max_step=float(param_b))
 	if INDICATOR_TYPE == "jma":
@@ -910,6 +923,10 @@ def attach_higher_timeframe_trend(df_low, symbol):
 		df_high_ind = compute_supertrend(df_high, length=HTF_LENGTH, factor=HTF_FACTOR)
 		indicator_col = "supertrend"
 		trend_col = "st_trend"
+	elif INDICATOR_TYPE == "htf_crossover":
+		df_high_ind = compute_supertrend(df_high, length=HTF_LENGTH, factor=HTF_FACTOR)
+		indicator_col = "supertrend"
+		trend_col = "st_trend"
 	elif INDICATOR_TYPE == "psar":
 		df_high_ind = compute_psar(df_high, step=HTF_PSAR_STEP, max_step=HTF_PSAR_MAX_STEP)
 		indicator_col = "psar"
@@ -933,10 +950,18 @@ def attach_higher_timeframe_trend(df_low, symbol):
 		indicator_col: "htf_indicator",
 		trend_col: "htf_trend"
 	})
+	# Berechne HTF Crossover (Trendwechsel)
+	htf["htf_crossover"] = (htf["htf_trend"] != htf["htf_trend"].shift(1)).astype(int)
+	htf["htf_crossover_up"] = ((htf["htf_trend"] == 1) & (htf["htf_trend"].shift(1) == -1)).astype(int)
+	htf["htf_crossover_down"] = ((htf["htf_trend"] == -1) & (htf["htf_trend"].shift(1) == 1)).astype(int)
+
 	aligned = htf.reindex(df_low.index, method="ffill")
 	df_low = df_low.copy()
 	df_low["htf_trend"] = aligned["htf_trend"].fillna(0).astype(int)
 	df_low["htf_indicator"] = aligned["htf_indicator"]
+	df_low["htf_crossover"] = aligned["htf_crossover"].fillna(0).astype(int)
+	df_low["htf_crossover_up"] = aligned["htf_crossover_up"].fillna(0).astype(int)
+	df_low["htf_crossover_down"] = aligned["htf_crossover_down"].fillna(0).astype(int)
 	return df_low
 
 
@@ -996,7 +1021,13 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 			htf_value = int(df["htf_trend"].iloc[i]) if "htf_trend" in df.columns else 0
 			htf_allows = True
 			if USE_HIGHER_TIMEFRAME_FILTER:
-				htf_allows = htf_value >= 1 if long_mode else htf_value <= -1
+				if INDICATOR_TYPE == "htf_crossover":
+					# HTF Crossover: nur bei frischem Trendwechsel erlaubt
+					htf_crossover_up = int(df["htf_crossover_up"].iloc[i]) if "htf_crossover_up" in df.columns else 0
+					htf_crossover_down = int(df["htf_crossover_down"].iloc[i]) if "htf_crossover_down" in df.columns else 0
+					htf_allows = htf_crossover_up == 1 if long_mode else htf_crossover_down == 1
+				else:
+					htf_allows = htf_value >= 1 if long_mode else htf_value <= -1
 
 			momentum_allows = True
 			if USE_MOMENTUM_FILTER and "momentum" in df.columns:
