@@ -1383,40 +1383,98 @@ def build_summary_payload(
     }
 
 
+def _compute_direction_stats(df: pd.DataFrame, direction: str) -> Dict[str, Any]:
+    """Compute statistics for a specific direction (Long/Short)."""
+    if df.empty or "direction" not in df.columns:
+        return {"trades": 0, "pnl": 0.0, "avg_pnl": 0.0, "win_rate": 0.0, "winners": 0, "losers": 0}
+    dir_df = df[df["direction"].str.lower() == direction.lower()]
+    if dir_df.empty:
+        return {"trades": 0, "pnl": 0.0, "avg_pnl": 0.0, "win_rate": 0.0, "winners": 0, "losers": 0}
+    pnl_col = "pnl" if "pnl" in dir_df.columns else None
+    if pnl_col is None:
+        return {"trades": len(dir_df), "pnl": 0.0, "avg_pnl": 0.0, "win_rate": 0.0, "winners": 0, "losers": 0}
+    pnl_series = pd.to_numeric(dir_df[pnl_col], errors="coerce").fillna(0.0)
+    winners = int((pnl_series > 0).sum())
+    losers = int((pnl_series < 0).sum())
+    total = len(pnl_series)
+    return {
+        "trades": total,
+        "pnl": float(pnl_series.sum()),
+        "avg_pnl": float(pnl_series.mean()) if total > 0 else 0.0,
+        "win_rate": float(winners / total * 100) if total > 0 else 0.0,
+        "winners": winners,
+        "losers": losers,
+    }
+
+
 def generate_summary_html(
     summary: Dict[str, Any],
     trades_df: pd.DataFrame,
     open_positions_df: pd.DataFrame,
     path: str,
 ) -> None:
+    # Compute separate stats for Long and Short
+    long_stats = _compute_direction_stats(trades_df, "long")
+    short_stats = _compute_direction_stats(trades_df, "short")
+
     html_parts = [
         "<html><head><meta charset='utf-8'>",
         "<title>Paper Trading Simulation Summary</title>",
-        "<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:4px 8px;text-align:right;}th{text-align:center;background:#f0f0f0;}h1,h2{margin-bottom:0;}</style>",
+        "<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:4px 8px;text-align:right;}th{text-align:center;background:#f0f0f0;}h1,h2,h3{margin-bottom:0;}.long{color:#228B22;}.short{color:#DC143C;}</style>",
         "</head><body>",
         f"<h1>Simulation Summary {summary['start']} → {summary['end']}</h1>",
+
+        # Overall Summary Table
+        "<h2>Overall Summary</h2>",
         "<table>",
-        "<tr><th>Metric</th><th>Value</th></tr>",
-        f"<tr><td style='text-align:left'>Closed trades</td><td>{summary['closed_trades']}</td></tr>",
-        f"<tr><td style='text-align:left'>Open positions</td><td>{summary['open_positions']}</td></tr>",
-        f"<tr><td style='text-align:left'>Closed PnL (USDT)</td><td>{summary['closed_pnl']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Avg trade PnL (USDT)</td><td>{summary['avg_trade_pnl']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Win rate (%)</td><td>{summary['win_rate_pct']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Winners</td><td>{summary['winners']}</td></tr>",
-        f"<tr><td style='text-align:left'>Losers</td><td>{summary['losers']}</td></tr>",
-        f"<tr><td style='text-align:left'>Open equity (net)</td><td>{summary['open_equity']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Final capital (USDT)</td><td>{summary['final_capital']:.2f}</td></tr>",
+        "<tr><th>Metric</th><th>Total</th><th class='long'>Long</th><th class='short'>Short</th></tr>",
+        f"<tr><td style='text-align:left'>Closed trades</td><td>{summary['closed_trades']}</td><td class='long'>{long_stats['trades']}</td><td class='short'>{short_stats['trades']}</td></tr>",
+        f"<tr><td style='text-align:left'>Closed PnL (USDT)</td><td>{summary['closed_pnl']:.2f}</td><td class='long'>{long_stats['pnl']:.2f}</td><td class='short'>{short_stats['pnl']:.2f}</td></tr>",
+        f"<tr><td style='text-align:left'>Avg trade PnL (USDT)</td><td>{summary['avg_trade_pnl']:.2f}</td><td class='long'>{long_stats['avg_pnl']:.2f}</td><td class='short'>{short_stats['avg_pnl']:.2f}</td></tr>",
+        f"<tr><td style='text-align:left'>Win rate (%)</td><td>{summary['win_rate_pct']:.2f}</td><td class='long'>{long_stats['win_rate']:.2f}</td><td class='short'>{short_stats['win_rate']:.2f}</td></tr>",
+        f"<tr><td style='text-align:left'>Winners</td><td>{summary['winners']}</td><td class='long'>{long_stats['winners']}</td><td class='short'>{short_stats['winners']}</td></tr>",
+        f"<tr><td style='text-align:left'>Losers</td><td>{summary['losers']}</td><td class='long'>{long_stats['losers']}</td><td class='short'>{short_stats['losers']}</td></tr>",
+        f"<tr><td style='text-align:left'>Open positions</td><td>{summary['open_positions']}</td><td colspan='2'></td></tr>",
+        f"<tr><td style='text-align:left'>Open equity (net)</td><td>{summary['open_equity']:.2f}</td><td colspan='2'></td></tr>",
+        f"<tr><td style='text-align:left'>Final capital (USDT)</td><td>{summary['final_capital']:.2f}</td><td colspan='2'></td></tr>",
         "</table>",
     ]
-    if not trades_df.empty:
-        html_parts.append("<h2>Complete Closed Trades (with Entry and Exit)</h2>")
-        full_cols = [c for c in [
-            "symbol","direction","indicator","htf","entry_time","entry_price","exit_time","exit_price","stake","pnl","reason"
-        ] if c in trades_df.columns]
+
+    full_cols = [c for c in [
+        "symbol","direction","indicator","htf","entry_time","entry_price","exit_time","exit_price","stake","pnl","reason"
+    ] if c in trades_df.columns]
+
+    # Long Trades Table
+    if not trades_df.empty and "direction" in trades_df.columns:
+        long_df = trades_df[trades_df["direction"].str.lower() == "long"]
+        if not long_df.empty:
+            html_parts.append(f"<h2 class='long'>Long Trades ({len(long_df)} trades, PnL: {long_stats['pnl']:.2f} USDT)</h2>")
+            html_parts.append(long_df[full_cols].to_html(index=False, float_format="{:.8f}".format))
+
+        # Short Trades Table
+        short_df = trades_df[trades_df["direction"].str.lower() == "short"]
+        if not short_df.empty:
+            html_parts.append(f"<h2 class='short'>Short Trades ({len(short_df)} trades, PnL: {short_stats['pnl']:.2f} USDT)</h2>")
+            html_parts.append(short_df[full_cols].to_html(index=False, float_format="{:.8f}".format))
+    elif not trades_df.empty:
+        html_parts.append("<h2>All Closed Trades</h2>")
         html_parts.append(trades_df[full_cols].to_html(index=False, float_format="{:.8f}".format))
+
+    # Open Positions Tables (also separated by direction)
     if not open_positions_df.empty:
-        html_parts.append("<h2>Open positions</h2>")
-        html_parts.append(open_positions_df.to_html(index=False, float_format="{:.8f}".format))
+        if "direction" in open_positions_df.columns:
+            long_open = open_positions_df[open_positions_df["direction"].str.lower() == "long"]
+            short_open = open_positions_df[open_positions_df["direction"].str.lower() == "short"]
+            if not long_open.empty:
+                html_parts.append(f"<h2 class='long'>Open Long Positions ({len(long_open)})</h2>")
+                html_parts.append(long_open.to_html(index=False, float_format="{:.8f}".format))
+            if not short_open.empty:
+                html_parts.append(f"<h2 class='short'>Open Short Positions ({len(short_open)})</h2>")
+                html_parts.append(short_open.to_html(index=False, float_format="{:.8f}".format))
+        else:
+            html_parts.append("<h2>Open Positions</h2>")
+            html_parts.append(open_positions_df.to_html(index=False, float_format="{:.8f}".format))
+
     html_parts.append("</body></html>")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("".join(html_parts))
@@ -2024,7 +2082,7 @@ def run_simulation(
                 sim_state,
                 emit_entry_log,
                 fixed_stake=stake_value,
-                use_testnet=use_testnet,
+                use_testnet=False,  # Simulation uses dynamic stake, not testnet default
                 order_executor=None,
             )
             if trades:
