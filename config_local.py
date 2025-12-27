@@ -35,7 +35,7 @@ ATR_STOP_MULTS = [None, 1.5]
 # TIME-BASED EXIT - FOKUS AUF 2 BARS (optimal)
 # ============================================================================
 USE_TIME_BASED_EXIT = True
-TIME_EXIT_BAR_VALUES = [0, 2, 5]  # 0=trend flip, 2=optimal, 5=test
+TIME_EXIT_BAR_VALUES = [0, 2, 3, 4, 5]  # 0=trend flip, 2-5=time exit bars
 
 # ============================================================================
 # TRADING DIRECTION
