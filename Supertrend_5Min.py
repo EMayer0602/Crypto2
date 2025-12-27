@@ -2283,6 +2283,11 @@ def _generate_year_report(year, results_df, trades_df):
 
 
 if __name__ == "__main__":
+	# Cache leeren für frische OHLCV-Daten bei jedem Start
+	DATA_CACHE.clear()
+	YEAR_SIMULATION_CACHE.clear()
+	print(f"[Init] OHLCV Cache geleert - hole frische Daten von {EXCHANGE_ID}")
+
 	if RUN_OVERALL_BEST:
 		run_overall_best_params()
 	else:
@@ -2298,3 +2303,10 @@ if __name__ == "__main__":
 				summary_rows = run_current_configuration()
 				record_global_best(indicator_name, summary_rows)
 		write_overall_result_tables()
+		# Nach dem Sweep automatisch die besten Parameter nochmal ausführen um overall_best_detailed.html zu generieren
+		if RUN_PARAMETER_SWEEP and os.path.exists(OVERALL_PARAMS_CSV):
+			print("\n" + "="*80)
+			print("[Auto] Generiere overall_best_detailed.html mit den besten Parametern...")
+			print("="*80)
+			DATA_CACHE.clear()  # Cache leeren für frische Daten
+			run_overall_best_params()
