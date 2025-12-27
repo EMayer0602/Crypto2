@@ -102,6 +102,7 @@ EXCHANGE_ID = "binance"
 TIMEFRAME = "1h"
 LOOKBACK = 720
 LOOKBACK_YEAR = 9000  # ~1 Jahr bei 1h Timeframe
+OHLCV_CACHE_DIR = "ohlcv_cache"  # Verzeichnis mit CSV-Cache-Dateien
 SYMBOLS = [
 	"BTC/EUR",
 	"ETH/EUR",
@@ -351,6 +352,84 @@ def get_data_exchange():
 	return _data_exchange
 
 
+def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
+	"""Lade OHLCV-Daten aus CSV-Cache, falls vorhanden.
+
+	Cache-Dateien haben Format: SYMBOL_TIMEFRAME.csv (z.B. BTC_EUR_1h.csv)
+	Erwartete Spalten: timestamp (oder datetime), open, high, low, close, volume
+	"""
+	if not OHLCV_CACHE_DIR or not os.path.isdir(OHLCV_CACHE_DIR):
+		return None
+
+	# Dateiname: BTC/EUR -> BTC_EUR_1h.csv
+	symbol_clean = symbol.replace("/", "_")
+	cache_file = os.path.join(OHLCV_CACHE_DIR, f"{symbol_clean}_{timeframe}.csv")
+
+	if not os.path.exists(cache_file):
+		return None
+
+	try:
+		df = pd.read_csv(cache_file)
+
+		# Finde Timestamp-Spalte
+		ts_col = None
+		for col in ["timestamp", "datetime", "date", "time", "Timestamp", "DateTime", "Date"]:
+			if col in df.columns:
+				ts_col = col
+				break
+
+		if ts_col is None:
+			# Versuche erste Spalte als Index
+			df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+			if df.index.name is None:
+				df.index.name = "timestamp"
+		else:
+			df[ts_col] = pd.to_datetime(df[ts_col], utc=True, errors="coerce")
+			df = df.set_index(ts_col)
+
+		# Konvertiere zu Berlin Timezone
+		if df.index.tzinfo is None:
+			df.index = df.index.tz_localize("UTC")
+		df.index = df.index.tz_convert(BERLIN_TZ)
+
+		# Stelle sicher, dass OHLCV-Spalten vorhanden sind
+		required_cols = ["open", "high", "low", "close", "volume"]
+		# Case-insensitive check
+		df.columns = df.columns.str.lower()
+		missing = [c for c in required_cols if c not in df.columns]
+		if missing:
+			print(f"[Cache] {cache_file}: Fehlende Spalten {missing}")
+			return None
+
+		df = df[required_cols].copy()
+		df = df.sort_index()
+
+		# Filtere nach Datum wenn angegeben
+		if start_date is not None:
+			if isinstance(start_date, str):
+				start_date = pd.Timestamp(start_date, tz=BERLIN_TZ)
+			elif start_date.tzinfo is None:
+				start_date = start_date.tz_localize(BERLIN_TZ)
+			df = df[df.index >= start_date]
+
+		if end_date is not None:
+			if isinstance(end_date, str):
+				end_date = pd.Timestamp(end_date, tz=BERLIN_TZ)
+			elif end_date.tzinfo is None:
+				end_date = end_date.tz_localize(BERLIN_TZ)
+			df = df[df.index <= end_date]
+
+		if df.empty:
+			return None
+
+		print(f"[Cache] {len(df)} Kerzen aus {cache_file} geladen ({df.index.min().date()} bis {df.index.max().date()})")
+		return df
+
+	except Exception as exc:
+		print(f"[Cache] Fehler beim Laden von {cache_file}: {exc}")
+		return None
+
+
 def _fetch_direct_ohlcv(symbol, timeframe, limit, since_ms=None):
 	exchange = get_data_exchange()
 	buffer = max(50, limit // 5)
@@ -461,9 +540,14 @@ def _fetch_historical_ohlcv(symbol, timeframe, start_date, end_date=None):
 	else:
 		end_dt = pd.Timestamp(end_date).tz_localize(BERLIN_TZ) if end_date.tzinfo is None else end_date
 
+	# Versuche zuerst den CSV-Cache
+	cached_df = _load_ohlcv_from_cache(symbol, timeframe, start_dt, end_dt)
+	if cached_df is not None and not cached_df.empty:
+		return cached_df
+
 	print(f"[Data] Lade historische Daten für {symbol} von {start_dt.date()} bis {end_dt.date()}...")
 
-	# Versuche zuerst die echte API
+	# Versuche die API
 	try:
 		exchange = get_data_exchange()
 
