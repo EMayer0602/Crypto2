@@ -1,7 +1,7 @@
 # ============================================================================
-# SWEEP SETTINGS - FOKUSSIERT AUF BESTE PERFORMER
+# SWEEP SETTINGS - FÜR SIMULATION DEAKTIVIERT
 # ============================================================================
-RUN_PARAMETER_SWEEP = True
+RUN_PARAMETER_SWEEP = False
 RUN_SAVED_PARAMS = False
 RUN_OVERALL_BEST = False
 
