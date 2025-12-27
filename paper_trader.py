@@ -2068,10 +2068,14 @@ def run_simulation(
         df_full = build_dataframe_for_context(context)
         if df_full.empty:
             continue
+        # Debug: Show data range
+        print(f"[Debug] {context.symbol} {context.direction}: Data from {df_full.index.min()} to {df_full.index.max()} ({len(df_full)} bars)")
         mask = (df_full.index >= (start_ts - buffer)) & (df_full.index <= end_ts)
         df_range = df_full.loc[mask]
         if len(df_range) < 2:
+            print(f"[Debug] {context.symbol} {context.direction}: Only {len(df_range)} bars in range, skipping")
             continue
+        print(f"[Debug] {context.symbol} {context.direction}: Simulating {len(df_range)} bars from {df_range.index.min()} to {df_range.index.max()}")
         for idx in range(1, len(df_range)):
             curr_ts = df_range.index[idx]
             if curr_ts < start_ts:
