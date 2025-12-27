@@ -1722,12 +1722,17 @@ def run_parameter_sweep():
 	for sym_idx, symbol in enumerate(SYMBOLS, 1):
 		print(f"\n  [{sym_idx}/{total_symbols}] {symbol}")
 		df_raw = prepare_symbol_dataframe(symbol)
+		# Debug: zeige HTF trend Verteilung
+		if "htf_trend" in df_raw.columns:
+			htf_counts = df_raw["htf_trend"].value_counts().to_dict()
+			print(f"    [Debug] HTF Trend Verteilung: {htf_counts}")
 		results = {d: [] for d in directions}
 		trades_per_combo = {d: {} for d in directions}
 		df_cache = {}
 		combo_count = 0
 		total_combos = len(PARAM_A_VALUES) * len(PARAM_B_VALUES) * len(ATR_STOP_MULTS) * len(hold_day_candidates) * len(directions)
 
+		first_combo = True
 		for param_a in PARAM_A_VALUES:
 			for param_b in PARAM_B_VALUES:
 				cache_key = (param_a, param_b)
@@ -1737,6 +1742,12 @@ def run_parameter_sweep():
 						if col in df_raw.columns:
 							df_tmp[col] = df_raw[col]
 					df_cache[cache_key] = df_tmp
+					# Debug: zeige trend_flag Verteilung für erste Kombination
+					if first_combo and "trend_flag" in df_tmp.columns:
+						tf_counts = df_tmp["trend_flag"].value_counts().to_dict()
+						tf_changes = (df_tmp["trend_flag"].diff() != 0).sum()
+						print(f"    [Debug] trend_flag Verteilung: {tf_counts}, Trend-Flips: {tf_changes}")
+						first_combo = False
 				df_st = df_cache[cache_key]
 				for atr_mult in ATR_STOP_MULTS:
 					for hold_days in hold_day_candidates:
@@ -2297,6 +2308,13 @@ if __name__ == "__main__":
 			clear_sweep_targets(indicator_candidates, htf_candidates)
 		for indicator_name in indicator_candidates:
 			apply_indicator_type(indicator_name)
+			# Cache leeren vor jedem Indikator für konsistente HTF-Berechnung
+			DATA_CACHE.clear()
+			print(f"\n{'='*80}")
+			print(f"[Indicator] Starte {INDICATOR_DISPLAY_NAME} - Cache geleert")
+			print(f"[Config] USE_MIN_HOLD_FILTER={USE_MIN_HOLD_FILTER}, MIN_HOLD_DAY_VALUES={MIN_HOLD_DAY_VALUES}")
+			print(f"[Config] USE_HIGHER_TIMEFRAME_FILTER={USE_HIGHER_TIMEFRAME_FILTER}")
+			print(f"{'='*80}")
 			for htf_value in htf_candidates:
 				apply_higher_timeframe(htf_value)
 				print(f"\n[Run] Indicator={INDICATOR_DISPLAY_NAME}, HTF={HIGHER_TIMEFRAME}, MinHoldDays={MIN_HOLD_DAY_VALUES}, ATRMults={ATR_STOP_MULTS}")
