@@ -674,7 +674,7 @@ def normalize_params(row: pd.Series, indicator_key: str) -> tuple[float, float]:
     return float(param_a), float(param_b)
 
 
-def build_strategy_context(row: pd.Series) -> StrategyContext:
+def build_strategy_context(row: pd.Series, default_max_hold_bars: int = 2) -> StrategyContext:
     symbol = row["Symbol"].strip()
     direction = row["Direction"].strip().lower()
     indicator_key = row["Indicator"].strip()
@@ -683,7 +683,9 @@ def build_strategy_context(row: pd.Series) -> StrategyContext:
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
     min_hold_bars = int(min_hold_days * st.BARS_PER_DAY)
-    max_hold_bars = int(parse_float(row.get("MaxHoldBars")) or 0)  # Time-based exit
+    # Time-based exit: use CSV value if present, otherwise use default
+    csv_max_hold = parse_float(row.get("MaxHoldBars"))
+    max_hold_bars = int(csv_max_hold) if csv_max_hold is not None and csv_max_hold > 0 else default_max_hold_bars
     return StrategyContext(
         symbol=symbol,
         direction=direction,
@@ -2030,6 +2032,7 @@ def run_simulation(
     refresh_params: bool = False,
     reset_state: bool = False,
     clear_outputs: bool = False,
+    default_max_hold_bars: int = 2,
 ) -> Tuple[List[TradeResult], Dict]:
     if end_ts <= start_ts:
         raise ValueError("End timestamp must be greater than start timestamp")
@@ -2058,7 +2061,7 @@ def run_simulation(
     all_trades: List[TradeResult] = []
     stake_value = fixed_stake if fixed_stake is not None else DEFAULT_FIXED_STAKE
     for _, row in best_df.iterrows():
-        context = build_strategy_context(row)
+        context = build_strategy_context(row, default_max_hold_bars=default_max_hold_bars)
         config = cfg_lookup.get(context.symbol)
         if not config or not direction_allowed(config, context.direction):
             continue
@@ -2150,6 +2153,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--start", type=str, default=None, help="Simulation start timestamp (ISO, default: 24h before end)")
     parser.add_argument("--end", type=str, default=None, help="Simulation end timestamp (ISO, default: now)")
     parser.add_argument("--lookback", type=int, default=None, help="Override LOOKBACK bars for data loading (e.g. 9000 for 1 year at 1h)")
+    parser.add_argument("--max-hold-bars", type=int, default=2, help="Time-based exit: force exit after N bars (default: 2, 0=disabled)")
     parser.add_argument("--use-saved-state", action="store_true", help="Seed simulations with the saved JSON state instead of a fresh account")
     parser.add_argument("--sim-log", type=str, default=SIMULATION_LOG_FILE, help="CSV path for simulated trades")
     parser.add_argument("--sim-json", type=str, default=SIMULATION_LOG_JSON, help="JSON path for simulated trades")
@@ -2388,6 +2392,7 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
                 refresh_params=args.refresh_params,
                 reset_state=args.reset_state,
                 clear_outputs=args.clear_outputs,
+                default_max_hold_bars=args.max_hold_bars,
             )
             trades_df = trades_to_dataframe(trades)
             open_positions = final_state.get("positions", [])
