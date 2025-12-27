@@ -128,6 +128,11 @@ USE_MIN_HOLD_FILTER = True
 DEFAULT_MIN_HOLD_DAYS = 0
 MIN_HOLD_DAY_VALUES = [0, 1, 2]
 
+# Time-based Exit: Zwangs-Exit nach N Bars (0 = deaktiviert)
+USE_TIME_BASED_EXIT = True
+DEFAULT_TIME_EXIT_BARS = 0
+TIME_EXIT_BAR_VALUES = [0, 2, 5, 10]  # 0 = kein Zwangs-Exit
+
 USE_HIGHER_TIMEFRAME_FILTER = True
 HIGHER_TIMEFRAME = "12h"
 HTF_LOOKBACK = 500
@@ -995,11 +1000,12 @@ def prepare_symbol_dataframe(symbol):
 	return df
 
 
-def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=0, min_hold_days=None):
+def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=0, min_hold_days=None, max_hold_bars=0):
 	direction = direction.lower()
 	if direction not in {"long", "short"}:
 		raise ValueError("direction must be 'long' or 'short'")
 	min_hold_bars = 0 if min_hold_bars is None else max(0, int(min_hold_bars))
+	max_hold_bars = 0 if max_hold_bars is None else max(0, int(max_hold_bars))  # 0 = kein Limit
 	min_hold_days = min_hold_days if min_hold_days is not None else 0
 
 	long_mode = direction == "long"
@@ -1086,6 +1092,11 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 				exit_price = stop_price
 				exit_reason = "ATR stop"
 
+		# Time-based Exit: Zwangs-Exit nach max_hold_bars
+		if exit_price is None and max_hold_bars > 0 and bars_in_position >= max_hold_bars:
+			exit_price = float(df["close"].iloc[i])
+			exit_reason = f"Time exit ({max_hold_bars} bars)"
+
 		if exit_price is None:
 			if long_mode and prev_trend == 1 and trend == -1 and bars_in_position >= min_hold_bars:
 				exit_price = float(df["close"].iloc[i])
@@ -1113,7 +1124,9 @@ def backtest_supertrend(df, atr_stop_mult=None, direction="long", min_hold_bars=
 			"PnL (USD)": pnl_usd,
 			"Equity": equity,
 			"Direction": direction.capitalize(),
-			"MinHoldDays": min_hold_days
+			"MinHoldDays": min_hold_days,
+			"MaxHoldBars": max_hold_bars,
+			"BarsHeld": bars_in_position
 		})
 		in_position = False
 		entry_capital = None
@@ -1751,6 +1764,7 @@ def run_parameter_sweep():
 
 	directions = get_enabled_directions()
 	hold_day_candidates = MIN_HOLD_DAY_VALUES if USE_MIN_HOLD_FILTER else [DEFAULT_MIN_HOLD_DAYS]
+	time_exit_candidates = TIME_EXIT_BAR_VALUES if USE_TIME_BASED_EXIT else [DEFAULT_TIME_EXIT_BARS]
 
 	total_symbols = len(SYMBOLS)
 	for sym_idx, symbol in enumerate(SYMBOLS, 1):
@@ -1764,7 +1778,7 @@ def run_parameter_sweep():
 		trades_per_combo = {d: {} for d in directions}
 		df_cache = {}
 		combo_count = 0
-		total_combos = len(PARAM_A_VALUES) * len(PARAM_B_VALUES) * len(ATR_STOP_MULTS) * len(hold_day_candidates) * len(directions)
+		total_combos = len(PARAM_A_VALUES) * len(PARAM_B_VALUES) * len(ATR_STOP_MULTS) * len(hold_day_candidates) * len(time_exit_candidates) * len(directions)
 
 		first_combo = True
 		for param_a in PARAM_A_VALUES:
@@ -1786,33 +1800,37 @@ def run_parameter_sweep():
 				for atr_mult in ATR_STOP_MULTS:
 					for hold_days in hold_day_candidates:
 						min_hold_bars = hold_days * BARS_PER_DAY
-						for direction in directions:
-							df_st_with_htf = df_st.copy()
-							for col in ("htf_trend", "htf_indicator", "momentum"):
-								if col in df_raw.columns:
-									df_st_with_htf[col] = df_raw[col]
-							trades = backtest_supertrend(
-								df_st_with_htf,
-								atr_stop_mult=atr_mult,
-								direction=direction,
-								min_hold_bars=min_hold_bars,
-								min_hold_days=hold_days,
-							)
-							stats = performance_report(
-								trades,
-								symbol,
-								param_a,
-								param_b,
-								direction.capitalize(),
-								hold_days,
-							)
-							stats["ATRStopMult"] = atr_mult if atr_mult is not None else "None"
-							stats["MinHoldBars"] = min_hold_bars
-							results[direction].append(stats)
-							trades_per_combo[direction][(param_a, param_b, atr_mult, hold_days)] = trades
-							combo_count += 1
-							pnl = stats.get("FinalEquity", START_EQUITY) - START_EQUITY
-							print(f"    {combo_count}/{total_combos} | {PARAM_A_LABEL}={param_a}, {PARAM_B_LABEL}={param_b}, ATR={atr_mult}, Hold={hold_days}d, {direction} -> PnL: {pnl:+.2f}", flush=True)
+						for time_exit in time_exit_candidates:
+							for direction in directions:
+								df_st_with_htf = df_st.copy()
+								for col in ("htf_trend", "htf_indicator", "momentum", "htf_crossover", "htf_crossover_up", "htf_crossover_down"):
+									if col in df_raw.columns:
+										df_st_with_htf[col] = df_raw[col]
+								trades = backtest_supertrend(
+									df_st_with_htf,
+									atr_stop_mult=atr_mult,
+									direction=direction,
+									min_hold_bars=min_hold_bars,
+									min_hold_days=hold_days,
+									max_hold_bars=time_exit,
+								)
+								stats = performance_report(
+									trades,
+									symbol,
+									param_a,
+									param_b,
+									direction.capitalize(),
+									hold_days,
+								)
+								stats["ATRStopMult"] = atr_mult if atr_mult is not None else "None"
+								stats["MinHoldBars"] = min_hold_bars
+								stats["MaxHoldBars"] = time_exit
+								results[direction].append(stats)
+								trades_per_combo[direction][(param_a, param_b, atr_mult, hold_days, time_exit)] = trades
+								combo_count += 1
+								pnl = stats.get("FinalEquity", START_EQUITY) - START_EQUITY
+								time_exit_str = f"Exit={time_exit}b" if time_exit > 0 else "Exit=trend"
+								print(f"    {combo_count}/{total_combos} | {PARAM_A_LABEL}={param_a}, {PARAM_B_LABEL}={param_b}, ATR={atr_mult}, Hold={hold_days}d, {time_exit_str}, {direction} -> PnL: {pnl:+.2f}", flush=True)
 
 		for direction in directions:
 			dir_results = results[direction]
@@ -1829,6 +1847,7 @@ def run_parameter_sweep():
 			best_param_a, best_param_b = DEFAULT_PARAM_A, DEFAULT_PARAM_B
 			best_atr = None
 			best_hold_days = DEFAULT_MIN_HOLD_DAYS
+			best_time_exit = DEFAULT_TIME_EXIT_BARS
 			final_equity = START_EQUITY
 			trades_count = 0
 			win_rate = 0.0
@@ -1842,12 +1861,13 @@ def run_parameter_sweep():
 				best_atr_raw = best_row.get("ATRStopMult", "None")
 				best_atr = best_atr_raw if best_atr_raw != "None" else None
 				best_hold_days = int(best_row.get("MinHoldDays", DEFAULT_MIN_HOLD_DAYS))
+				best_time_exit = int(best_row.get("MaxHoldBars", DEFAULT_TIME_EXIT_BARS))
 				final_equity = float(best_row.get("FinalEquity", START_EQUITY))
 				trades_count = int(best_row.get("Trades", 0))
 				win_rate = float(best_row.get("WinRate", 0.0))
 				max_dd = float(best_row.get("MaxDrawdown", 0.0))
 				best_df = df_cache[(best_param_a, best_param_b)]
-				best_trades = trades_per_combo[direction][(best_param_a, best_param_b, best_atr, best_hold_days)]
+				best_trades = trades_per_combo[direction][(best_param_a, best_param_b, best_atr, best_hold_days, best_time_exit)]
 			else:
 				best_df = compute_indicator(df_raw, best_param_a, best_param_b)
 				for col in ("htf_trend", "htf_indicator", "momentum"):
@@ -1856,6 +1876,7 @@ def run_parameter_sweep():
 				best_trades = pd.DataFrame()
 
 			atr_label = best_atr if best_atr is not None else "None"
+			time_exit_label = f"{best_time_exit}b" if best_time_exit > 0 else "trend"
 			best_params_summary.append({
 				"Symbol": symbol,
 				"Direction": direction.capitalize(),
@@ -1865,11 +1886,13 @@ def run_parameter_sweep():
 				"ParamB": best_param_b,
 				PARAM_A_LABEL: best_param_a,
 				PARAM_B_LABEL: best_param_b,
-				"Length": best_param_a if INDICATOR_TYPE == "supertrend" else None,
-				"Factor": best_param_b if INDICATOR_TYPE == "supertrend" else None,
+				"Length": best_param_a if INDICATOR_TYPE in ("supertrend", "htf_crossover") else None,
+				"Factor": best_param_b if INDICATOR_TYPE in ("supertrend", "htf_crossover") else None,
 				"ATRStopMult": atr_label,
 				"ATRStopMultValue": best_atr,
 				"MinHoldDays": best_hold_days,
+				"MaxHoldBars": best_time_exit,
+				"TimeExit": time_exit_label,
 				"HTF": HIGHER_TIMEFRAME,
 				"FinalEquity": final_equity,
 				"Trades": trades_count,
