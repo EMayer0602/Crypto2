@@ -437,20 +437,23 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 	try:
 		df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
 
-		# Konvertiere zu Berlin Timezone (handle verschiedene Pandas-Versionen)
-		try:
-			tz = df.index.tz
-		except AttributeError:
-			tz = getattr(df.index, 'tzinfo', None)
+		# Robuste Timezone-Behandlung
+		if df.index.dtype == 'object':
+			# Index ist noch String - parse mit timezone
+			df.index = pd.to_datetime(df.index)
 
-		if tz is None:
-			# Versuche Timezone aus String zu parsen (z.B. "2024-05-01 00:00:00+01:00")
-			if len(df) > 0 and isinstance(df.index[0], str):
-				df.index = pd.to_datetime(df.index, utc=True)
-			else:
+		# Prüfe ob Timezone vorhanden
+		has_tz = hasattr(df.index, 'tz') and df.index.tz is not None
+
+		if not has_tz:
+			# Keine Timezone - nehme Berlin an
+			try:
 				df.index = df.index.tz_localize(BERLIN_TZ)
-
-		if df.index.tz != BERLIN_TZ:
+			except Exception:
+				# Falls schon lokalisiert, konvertiere
+				df.index = df.index.tz_convert(BERLIN_TZ)
+		else:
+			# Hat Timezone - konvertiere zu Berlin
 			df.index = df.index.tz_convert(BERLIN_TZ)
 
 		# Stelle sicher, dass OHLCV-Spalten vorhanden sind
@@ -458,6 +461,7 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 		required_cols = ["open", "high", "low", "close", "volume"]
 		missing = [c for c in required_cols if c not in df.columns]
 		if missing:
+			print(f"[Cache] FEHLER: {cache_path} fehlen Spalten: {missing}")
 			return None
 
 		df = df[required_cols].copy()
@@ -480,8 +484,9 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 		return df if not df.empty else None
 
 	except Exception as exc:
-		print(f"[Cache] Fehler beim Laden von {cache_path}: {exc}")
-		return None
+		print(f"[Cache] FEHLER beim Laden von {cache_path}: {exc}")
+		print(f"[Cache] ÜBERSPRINGE diese Datei um Datenverlust zu vermeiden!")
+		return "LOAD_ERROR"  # Spezieller Wert um Überschreiben zu verhindern
 
 
 def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
@@ -497,6 +502,11 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 
 	# Prüfe ob Cache existiert
 	existing_df = _load_ohlcv_from_cache(symbol, timeframe)
+
+	# Bei Ladefehler: NIEMALS überschreiben!
+	if existing_df == "LOAD_ERROR":
+		print(f"[Cache] ABBRUCH: {symbol} {timeframe} wird NICHT überschrieben!")
+		return None
 
 	# NIEMALS automatisch löschen! Nur warnen wenn Daten später beginnen
 	if existing_df is not None and not existing_df.empty:
