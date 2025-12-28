@@ -357,6 +357,36 @@ OHLCV_CACHE_TIMEFRAMES = ["1h", "4h", "6h", "8h", "12h", "1d"]  # Zu cachende Ti
 # Binance unterstützt direkt: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
 
 
+def preload_ohlcv_cache(symbols=None, timeframes=None, start_date=None):
+	"""Lädt OHLCV-Daten für alle Symbole und Timeframes ab start_date.
+
+	Sollte VOR der Simulation aufgerufen werden um sicherzustellen,
+	dass alle Daten ab 2024-05-01 verfügbar sind.
+	"""
+	if symbols is None:
+		symbols = SYMBOLS
+	if timeframes is None:
+		timeframes = OHLCV_CACHE_TIMEFRAMES
+	if start_date is None:
+		start_date = OHLCV_CACHE_START
+
+	print(f"[Cache] Pre-Loading OHLCV-Daten für {len(symbols)} Symbole, {len(timeframes)} Timeframes ab {start_date}...")
+
+	total = len(symbols) * len(timeframes)
+	count = 0
+
+	for symbol in symbols:
+		for tf in timeframes:
+			count += 1
+			print(f"[Cache] ({count}/{total}) {symbol} {tf}...")
+			try:
+				_fetch_and_cache_ohlcv(symbol, tf, start_date)
+			except Exception as exc:
+				print(f"[Cache] Fehler bei {symbol} {tf}: {exc}")
+
+	print(f"[Cache] Pre-Load abgeschlossen. {count} Kombinationen geladen.")
+
+
 def _get_cache_path(symbol, timeframe):
 	"""Gibt den Cache-Dateipfad für ein Symbol und Timeframe zurück."""
 	symbol_clean = symbol.replace("/", "_")
@@ -424,15 +454,13 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 
 
 def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
-	"""Lade OHLCV von Binance und speichere in Cache. Aktualisiert bestehenden Cache."""
+	"""Lade OHLCV von Binance und speichere in Cache. Aktualisiert bestehenden Cache.
+
+	WICHTIG: Neuer Cache wird IMMER ab OHLCV_CACHE_START (2024-05-01) geladen,
+	unabhängig vom übergebenen start_date. Das start_date wird nur für Filterung verwendet.
+	"""
 	import time as time_module
 
-	if start_date is None:
-		start_date = OHLCV_CACHE_START
-
-	start_dt = pd.Timestamp(start_date, tz=BERLIN_TZ) if isinstance(start_date, str) else start_date
-	if start_dt.tzinfo is None:
-		start_dt = start_dt.tz_localize(BERLIN_TZ)
 	end_dt = pd.Timestamp.now(BERLIN_TZ)
 
 	# Prüfe ob Cache existiert und hole letzten Timestamp
@@ -443,7 +471,9 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 		start_dt = last_ts  # Überlappung für Merge
 		print(f"[Cache] Aktualisiere {symbol} {timeframe} ab {start_dt.date()}")
 	else:
+		# NEUER Cache: IMMER ab OHLCV_CACHE_START laden!
 		existing_df = pd.DataFrame()
+		start_dt = pd.Timestamp(OHLCV_CACHE_START, tz=BERLIN_TZ)
 		print(f"[Cache] Lade {symbol} {timeframe} von {start_dt.date()} bis {end_dt.date()}...")
 
 	# Prüfe ob Binance diesen Timeframe direkt unterstützt

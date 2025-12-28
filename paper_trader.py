@@ -2225,6 +2225,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=None,
         help="Override the maximum number of concurrent open positions (default 5)",
     )
+    parser.add_argument(
+        "--preload-cache",
+        action="store_true",
+        help="Pre-load OHLCV cache for all symbols and timeframes from 2024-05-01 before simulation",
+    )
     return parser.parse_args(argv)
 
 
@@ -2338,6 +2343,15 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
         if htf_bars_needed > st.HTF_LOOKBACK:
             st.HTF_LOOKBACK = htf_bars_needed
         print(f"[Config] LOOKBACK set to {st.LOOKBACK} bars, HTF_LOOKBACK to {st.HTF_LOOKBACK}")
+
+    # Pre-load OHLCV cache for all symbols and timeframes if requested or needed for simulation
+    if args.preload_cache or (args.simulate and not args.replay_trades_csv):
+        print("[Cache] Pre-loading OHLCV data for all symbols and timeframes...")
+        st.preload_ohlcv_cache(
+            symbols=allowed_symbols if allowed_symbols else st.SYMBOLS,
+            timeframes=st.OHLCV_CACHE_TIMEFRAMES,
+            start_date=st.OHLCV_CACHE_START,
+        )
 
     if args.simulate:
         trades: List[TradeResult] = []
