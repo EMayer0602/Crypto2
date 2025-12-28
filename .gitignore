@@ -1,4 +1,3 @@
 __pycache__/
-ohlcv_cache/
 *.pyc
 .env
