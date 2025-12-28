@@ -386,6 +386,13 @@ def preload_ohlcv_cache(symbols=None, timeframes=None, start_date=None):
 			# Prüfe ob Cache existiert und aktuell ist
 			if os.path.exists(cache_path):
 				cached = _load_ohlcv_from_cache(symbol, tf)
+
+				# KRITISCH: Bei Ladefehler NIEMALS überschreiben!
+				if cached == "LOAD_ERROR":
+					print(f"[Cache] ÜBERSPRINGE {symbol} {tf} - Ladefehler, Datei wird geschützt!")
+					skipped += 1
+					continue
+
 				if cached is not None and not cached.empty:
 					last_ts = cached.index.max()
 					tf_minutes = timeframe_to_minutes(tf)
@@ -394,8 +401,13 @@ def preload_ohlcv_cache(symbols=None, timeframes=None, start_date=None):
 					if last_ts >= threshold:
 						skipped += 1
 						continue  # Cache ist aktuell, überspringe
+				else:
+					# Datei existiert aber leer/None - NICHT überschreiben!
+					print(f"[Cache] ÜBERSPRINGE {symbol} {tf} - Datei existiert aber fehlerhaft!")
+					skipped += 1
+					continue
 
-			# Cache fehlt oder veraltet - aktualisieren
+			# Cache fehlt (Datei existiert nicht) - neu laden erlaubt
 			print(f"[Cache] ({count}/{total}) {symbol} {tf}...")
 			try:
 				_fetch_and_cache_ohlcv(symbol, tf, start_date)
@@ -414,15 +426,54 @@ def _get_cache_path(symbol, timeframe):
 
 
 def _save_ohlcv_to_cache(df, symbol, timeframe):
-	"""Speichert OHLCV-DataFrame in CSV-Cache (Berlin-Zeit UTC+1)."""
+	"""Speichert OHLCV-DataFrame in CSV-Cache (Berlin-Zeit UTC+1).
+
+	SICHER: Existierende Daten werden NIE gelöscht!
+	Neue Daten werden mit existierenden gemerged.
+	"""
 	if df is None or df.empty:
 		return
+
 	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
 	cache_path = _get_cache_path(symbol, timeframe)
+
 	df_save = df.copy()
-	# Speichere in Berlin-Zeit (UTC+1)
+	# Konvertiere zu Berlin-Zeit
 	if df_save.index.tzinfo is not None:
 		df_save.index = df_save.index.tz_convert(BERLIN_TZ)
+
+	# KRITISCH: Wenn Datei existiert, MERGE statt überschreiben!
+	if os.path.exists(cache_path):
+		try:
+			existing = pd.read_csv(cache_path, index_col=0, parse_dates=True)
+
+			# Robuste Timezone-Behandlung für existierende Daten
+			if existing.index.dtype == 'object':
+				existing.index = pd.to_datetime(existing.index)
+			has_tz = hasattr(existing.index, 'tz') and existing.index.tz is not None
+			if not has_tz:
+				try:
+					existing.index = existing.index.tz_localize(BERLIN_TZ)
+				except Exception:
+					existing.index = existing.index.tz_convert(BERLIN_TZ)
+			else:
+				existing.index = existing.index.tz_convert(BERLIN_TZ)
+
+			# Merge: Existierende Daten + neue Daten, Duplikate -> neueste behalten
+			old_len = len(existing)
+			combined = pd.concat([existing, df_save])
+			combined = combined[~combined.index.duplicated(keep="last")]
+			combined = combined.sort_index()
+			df_save = combined
+			new_rows = len(df_save) - old_len
+			print(f"[Cache] MERGE: {old_len} existierend + {new_rows} neue = {len(df_save)} Kerzen")
+
+		except Exception as exc:
+			# Bei Fehler: NICHT überschreiben, nur warnen!
+			print(f"[Cache] FEHLER beim Mergen: {exc}")
+			print(f"[Cache] ABBRUCH: {cache_path} wird NICHT überschrieben!")
+			return
+
 	df_save.index.name = "timestamp"
 	df_save.to_csv(cache_path)
 	print(f"[Cache] {len(df_save)} Kerzen gespeichert: {cache_path}")
@@ -647,17 +698,34 @@ def _build_current_bar_from_1m(symbol, timeframe):
 
 def ensure_ohlcv_cache(symbol, timeframe, start_date=None):
 	"""Stellt sicher, dass OHLCV-Cache existiert und aktuell ist. Gibt DataFrame zurück."""
+	# Prüfe ob Cache-Datei existiert
+	cache_path = _get_cache_path(symbol, timeframe)
+	cache_file_exists = os.path.exists(cache_path)
+
 	# Versuche aus Cache zu laden
 	cached = _load_ohlcv_from_cache(symbol, timeframe, start_date)
+
+	# KRITISCH: Bei Ladefehler NIEMALS überschreiben!
+	if cached == "LOAD_ERROR":
+		print(f"[Cache] ABBRUCH in ensure_ohlcv_cache: {symbol} {timeframe} wird NICHT überschrieben!")
+		return None
 
 	now = pd.Timestamp.now(BERLIN_TZ)
 	tf_minutes = timeframe_to_minutes(timeframe)
 	threshold = now - pd.Timedelta(minutes=tf_minutes * 2)  # Cache gilt als veraltet nach 2 Bars
 
 	need_update = False
-	if cached is None or cached.empty:
+
+	# NUR updaten wenn Datei NICHT existiert ODER Cache leer/veraltet
+	if not cache_file_exists:
+		# Datei existiert nicht - neu laden erlaubt
 		need_update = True
+	elif cached is None or (hasattr(cached, 'empty') and cached.empty):
+		# Datei existiert aber konnte nicht geladen werden - NICHT überschreiben!
+		print(f"[Cache] WARNUNG: {cache_path} existiert aber ist leer/fehlerhaft - wird NICHT überschrieben!")
+		need_update = False
 	elif cached.index.max() < threshold:
+		# Datei existiert und ist veraltet - Update erlaubt (fügt nur hinzu)
 		need_update = True
 
 	if need_update:
