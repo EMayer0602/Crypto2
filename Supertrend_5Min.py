@@ -487,8 +487,8 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 	"""Lade OHLCV von Binance und speichere in Cache.
 
-	WICHTIG: Cache wird IMMER ab OHLCV_CACHE_START (2024-05-01) geladen.
-	Falls bestehender Cache nicht weit genug zurückreicht, wird er gelöscht.
+	SICHER: Existierende Daten werden NIE gelöscht, nur ergänzt!
+	Nur --force-reload-cache löscht den Cache explizit.
 	"""
 	import time as time_module
 
@@ -498,29 +498,19 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 	# Prüfe ob Cache existiert
 	existing_df = _load_ohlcv_from_cache(symbol, timeframe)
 
-	# VALIDIERUNG: Cache muss Daten ab OHLCV_CACHE_START haben!
+	# NIEMALS automatisch löschen! Nur warnen wenn Daten später beginnen
 	if existing_df is not None and not existing_df.empty:
 		cache_start = existing_df.index.min()
-		# Toleranz: Cache muss spätestens 7 Tage nach OHLCV_CACHE_START beginnen
-		max_allowed_start = required_start + pd.Timedelta(days=7)
-		if cache_start > max_allowed_start:
-			# Cache ist zu neu - löschen und neu laden!
-			cache_path = _get_cache_path(symbol, timeframe)
-			print(f"[Cache] WARNUNG: {symbol} {timeframe} beginnt erst {cache_start.date()}, erwartet {required_start.date()}")
-			print(f"[Cache] Lösche veralteten Cache und lade neu...")
-			try:
-				os.remove(cache_path)
-			except OSError:
-				pass
-			existing_df = None
+		if cache_start > required_start + pd.Timedelta(days=7):
+			print(f"[Cache] INFO: {symbol} {timeframe} beginnt {cache_start.date()} (Binance hat evtl. keine älteren Daten)")
 
 	if existing_df is not None and not existing_df.empty:
-		# Cache ist valide - nur aktualisieren ab letztem Eintrag
+		# Cache existiert - nur aktualisieren ab letztem Eintrag
 		last_ts = existing_df.index.max()
 		start_dt = last_ts
 		print(f"[Cache] Aktualisiere {symbol} {timeframe} ab {start_dt}")
 	else:
-		# Kein Cache oder ungültig - komplett neu laden ab 2024-05-01
+		# Kein Cache - neu laden
 		existing_df = pd.DataFrame()
 		start_dt = required_start
 		print(f"[Cache] Lade {symbol} {timeframe} von {start_dt.date()} bis {end_dt.date()}...")
