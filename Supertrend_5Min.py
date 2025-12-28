@@ -445,19 +445,11 @@ def _save_ohlcv_to_cache(df, symbol, timeframe):
 	# KRITISCH: Wenn Datei existiert, MERGE statt überschreiben!
 	if os.path.exists(cache_path):
 		try:
-			existing = pd.read_csv(cache_path, index_col=0, parse_dates=True)
-
-			# Robuste Timezone-Behandlung für existierende Daten
-			if existing.index.dtype == 'object':
-				existing.index = pd.to_datetime(existing.index)
-			has_tz = hasattr(existing.index, 'tz') and existing.index.tz is not None
-			if not has_tz:
-				try:
-					existing.index = existing.index.tz_localize(BERLIN_TZ)
-				except Exception:
-					existing.index = existing.index.tz_convert(BERLIN_TZ)
-			else:
-				existing.index = existing.index.tz_convert(BERLIN_TZ)
+			# Lese OHNE parse_dates um Timezone-Probleme zu vermeiden (Windows/neueres Pandas)
+			existing = pd.read_csv(cache_path, index_col=0)
+			# Parse Timestamps manuell mit UTC-Konvertierung
+			existing.index = pd.to_datetime(existing.index, utc=True)
+			existing.index = existing.index.tz_convert(BERLIN_TZ)
 
 			# Merge: Existierende Daten + neue Daten, Duplikate -> neueste behalten
 			old_len = len(existing)
