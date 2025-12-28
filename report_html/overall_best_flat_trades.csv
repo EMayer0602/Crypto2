@@ -1,0 +1,37 @@
+Indicator;IndicatorDisplay;HTF;Symbol;Direction;ParamA;ParamB;Length;SlowLength;ATRStopMultValue;ATRStopMult;MinHoldDays;FinalEquity;Trades;WinRate;MaxDrawdown;TradesCSV
+jma;Jurik Moving Average;12h;LUNC/USDT;Long;50;-50,0;50;;1,5;1.5;2;19131,207618079163;15;0,4666666666666667;157,6930279484768;report_html\jma_12h\trades_LUNC_USDT_jma_best.csv
+jma;Jurik Moving Average;4h;LINK/EUR;Short;20;50,0;20;;;None;2;16610,655582475647;15;0,6666666666666666;194,0661754889079;report_html\jma_4h\trades_LINK_EUR_jma_best_short.csv
+jma;Jurik Moving Average;4h;LUNC/USDT;Short;20;0,0;20;;;None;2;17610,786062702726;15;0,7333333333333333;122,17979273228957;report_html\jma_4h\trades_LUNC_USDT_jma_best_short.csv
+jma;Jurik Moving Average;4h;ZEC/USDC;Long;20;-50,0;20;;;None;0;16628,740180104833;74;0,35135135135135137;272,1765645244359;report_html\jma_4h\trades_ZEC_USDC_jma_best.csv
+jma;Jurik Moving Average;6h;BTC/EUR;Long;20;0,0;20;;1,5;1.5;2;16219,67982355807;18;0,3333333333333333;85,52777226485523;report_html\jma_6h\trades_BTC_EUR_jma_best.csv
+jma;Jurik Moving Average;6h;BTC/EUR;Short;50;-50,0;50;;;None;2;16328,660513078066;13;0,6923076923076923;86,91685972661617;report_html\jma_6h\trades_BTC_EUR_jma_best_short.csv
+jma;Jurik Moving Average;6h;ETH/EUR;Long;20;-50,0;20;;;None;2;15888,40091462401;15;0,4;206,93681964844473;report_html\jma_6h\trades_ETH_EUR_jma_best.csv
+jma;Jurik Moving Average;6h;ETH/EUR;Short;30;-50,0;30;;;None;2;16354,576565392334;14;0,5;190,47569216215015;report_html\jma_6h\trades_ETH_EUR_jma_best_short.csv
+jma;Jurik Moving Average;6h;SOL/EUR;Short;50;-50,0;50;;;None;2;16544,84450856265;13;0,6923076923076923;140,05503837178003;report_html\jma_6h\trades_SOL_EUR_jma_best_short.csv
+jma;Jurik Moving Average;6h;SUI/EUR;Long;20;-50,0;20;;;None;2;15940,91878360154;15;0,4666666666666667;371,3116248635706;report_html\jma_6h\trades_SUI_EUR_jma_best.csv
+jma;Jurik Moving Average;6h;SUI/EUR;Short;20;-50,0;20;;;None;2;16981,19406882794;15;0,6666666666666666;108,6895785258348;report_html\jma_6h\trades_SUI_EUR_jma_best_short.csv
+jma;Jurik Moving Average;6h;TNSR/USDC;Long;30;50,0;30;;1,5;1.5;2;27396,957343197722;15;0,4;775,2976451153881;report_html\jma_6h\trades_TNSR_USDC_jma_best.csv
+jma;Jurik Moving Average;6h;TNSR/USDC;Short;50;-50,0;50;;1,5;1.5;2;18359,310464240403;21;0,6190476190476191;496,3151291454269;report_html\jma_6h\trades_TNSR_USDC_jma_best_short.csv
+jma;Jurik Moving Average;6h;XRP/EUR;Short;20;50,0;20;;;None;2;16294,058469010903;17;0,5294117647058824;157,3305953042618;report_html\jma_6h\trades_XRP_EUR_jma_best_short.csv
+jma;Jurik Moving Average;8h;LINK/EUR;Long;20;-50,0;20;;;None;2;16003,167580909667;14;0,42857142857142855;252,05505939329305;report_html\jma_8h\trades_LINK_EUR_jma_best.csv
+jma;Jurik Moving Average;8h;SOL/EUR;Long;30;-50,0;30;;;None;2;16143,928365471624;14;0,5714285714285714;165,67527452646755;report_html\jma_8h\trades_SOL_EUR_jma_best.csv
+jma;Jurik Moving Average;8h;XRP/EUR;Long;50;-50,0;50;;;None;2;16015,448399379484;13;0,38461538461538464;170,86948875843336;report_html\jma_8h\trades_XRP_EUR_jma_best.csv
+jma;Jurik Moving Average;8h;ZEC/USDC;Short;50;50,0;50;;1,5;1.5;2;17657,02046258774;13;0,5384615384615384;330,7646380895203;report_html\jma_8h\trades_ZEC_USDC_jma_best_short.csv
+kama;Kaufman AMA;12h;SOL/EUR;Short;30;40,0;30;40,0;;None;2;16158,83972483694;13;0,6153846153846154;171,84160529777546;report_html\kama_12h\trades_SOL_EUR_kama_best_short.csv
+kama;Kaufman AMA;12h;XRP/EUR;Short;30;40,0;30;40,0;;None;2;16381,44748631883;12;0,75;96,1306331384967;report_html\kama_12h\trades_XRP_EUR_kama_best_short.csv
+kama;Kaufman AMA;12h;ZEC/USDC;Long;10;50,0;10;50,0;1,5;1.5;2;16480,51079268195;15;0,4;286,84089948306246;report_html\kama_12h\trades_ZEC_USDC_kama_best.csv
+kama;Kaufman AMA;4h;ETH/EUR;Long;20;50,0;20;50,0;;None;2;16333,818996324473;6;0,6666666666666666;28,07547653882102;report_html\kama_4h\trades_ETH_EUR_kama_best.csv
+kama;Kaufman AMA;4h;LUNC/USDT;Short;20;40,0;20;40,0;;None;2;17048,895613516324;10;0,5;183,88991035725485;report_html\kama_4h\trades_LUNC_USDT_kama_best_short.csv
+kama;Kaufman AMA;4h;SUI/EUR;Short;30;40,0;30;40,0;;None;2;16159,121362467167;7;0,7142857142857143;467,510048839491;report_html\kama_4h\trades_SUI_EUR_kama_best_short.csv
+kama;Kaufman AMA;6h;BTC/EUR;Long;30;30,0;30;30,0;;None;2;15956,86696907273;7;0,42857142857142855;123,0195404891947;report_html\kama_6h\trades_BTC_EUR_kama_best.csv
+kama;Kaufman AMA;6h;BTC/EUR;Short;30;30,0;30;30,0;1,5;1.5;2;15868,756416475377;15;0,2;327,7017034760793;report_html\kama_6h\trades_BTC_EUR_kama_best_short.csv
+kama;Kaufman AMA;6h;SOL/EUR;Long;20;50,0;20;50,0;1,5;1.5;2;15752,705130099148;8;0,125;199,70814021904334;report_html\kama_6h\trades_SOL_EUR_kama_best.csv
+kama;Kaufman AMA;6h;SUI/EUR;Long;10;30,0;10;30,0;;None;0;15881,99804669159;33;0,24242424242424243;348,45392259877735;report_html\kama_6h\trades_SUI_EUR_kama_best.csv
+kama;Kaufman AMA;6h;TNSR/USDC;Short;30;30,0;30;30,0;;None;2;17392,023535520584;13;0,6923076923076923;270,3074165348371;report_html\kama_6h\trades_TNSR_USDC_kama_best_short.csv
+kama;Kaufman AMA;8h;ETH/EUR;Short;30;50,0;30;50,0;;None;0;16073,426869663694;25;0,24;194,1747773270963;report_html\kama_8h\trades_ETH_EUR_kama_best_short.csv
+kama;Kaufman AMA;8h;LINK/EUR;Long;10;30,0;10;30,0;;None;2;16420,327507057882;4;1,0;0,0;report_html\kama_8h\trades_LINK_EUR_kama_best.csv
+kama;Kaufman AMA;8h;LINK/EUR;Short;30;40,0;30;40,0;;None;0;15922,557593684878;27;0,18518518518518517;257,4674618077006;report_html\kama_8h\trades_LINK_EUR_kama_best_short.csv
+kama;Kaufman AMA;8h;LUNC/USDT;Long;10;30,0;10;30,0;1,5;1.5;2;17898,480885286048;4;0,5;374,00389042918323;report_html\kama_8h\trades_LUNC_USDT_kama_best.csv
+kama;Kaufman AMA;8h;TNSR/USDC;Long;10;30,0;10;30,0;;None;0;19780,441145202454;9;0,4444444444444444;587,9483180884636;report_html\kama_8h\trades_TNSR_USDC_kama_best.csv
+kama;Kaufman AMA;8h;XRP/EUR;Long;30;30,0;30;30,0;1,5;1.5;2;15757,997236884343;9;0,0;193,7006444797862;report_html\kama_8h\trades_XRP_EUR_kama_best.csv
+kama;Kaufman AMA;8h;ZEC/USDC;Short;30;40,0;30;40,0;;None;2;16919,33581716992;7;0,8571428571428571;269,2218566581396;report_html\kama_8h\trades_ZEC_USDC_kama_best_short.csv
