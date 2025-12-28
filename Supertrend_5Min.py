@@ -358,10 +358,10 @@ OHLCV_CACHE_TIMEFRAMES = ["1h", "4h", "6h", "8h", "12h", "1d"]  # Zu cachende Ti
 
 
 def preload_ohlcv_cache(symbols=None, timeframes=None, start_date=None):
-	"""Lädt OHLCV-Daten für alle Symbole und Timeframes ab start_date.
+	"""Lädt/aktualisiert OHLCV-Daten für alle Symbole und Timeframes.
 
-	Sollte VOR der Simulation aufgerufen werden um sicherzustellen,
-	dass alle Daten ab 2024-05-01 verfügbar sind.
+	- Beim ERSTEN Mal: Lädt alles ab 2024-05-01
+	- Danach: Nur inkrementelle Updates (letzte fehlende Daten)
 	"""
 	if symbols is None:
 		symbols = SYMBOLS
@@ -370,21 +370,41 @@ def preload_ohlcv_cache(symbols=None, timeframes=None, start_date=None):
 	if start_date is None:
 		start_date = OHLCV_CACHE_START
 
-	print(f"[Cache] Pre-Loading OHLCV-Daten für {len(symbols)} Symbole, {len(timeframes)} Timeframes ab {start_date}...")
-
+	now = pd.Timestamp.now(BERLIN_TZ)
 	total = len(symbols) * len(timeframes)
 	count = 0
+	updated = 0
+	skipped = 0
+
+	print(f"[Cache] Prüfe {total} Cache-Dateien...")
 
 	for symbol in symbols:
 		for tf in timeframes:
 			count += 1
+			cache_path = _get_cache_path(symbol, tf)
+
+			# Prüfe ob Cache existiert und aktuell ist
+			if os.path.exists(cache_path):
+				cached = _load_ohlcv_from_cache(symbol, tf)
+				if cached is not None and not cached.empty:
+					last_ts = cached.index.max()
+					tf_minutes = timeframe_to_minutes(tf)
+					# Cache gilt als aktuell wenn letzte Kerze < 2 Timeframe-Perioden alt
+					threshold = now - pd.Timedelta(minutes=tf_minutes * 2)
+					if last_ts >= threshold:
+						skipped += 1
+						continue  # Cache ist aktuell, überspringe
+
+			# Cache fehlt oder veraltet - aktualisieren
 			print(f"[Cache] ({count}/{total}) {symbol} {tf}...")
 			try:
 				_fetch_and_cache_ohlcv(symbol, tf, start_date)
+				updated += 1
 			except Exception as exc:
 				print(f"[Cache] Fehler bei {symbol} {tf}: {exc}")
 
-	print(f"[Cache] Pre-Load abgeschlossen. {count} Kombinationen geladen.")
+	if skipped > 0:
+		print(f"[Cache] {skipped} Dateien bereits aktuell, {updated} aktualisiert.")
 
 
 def _get_cache_path(symbol, timeframe):
