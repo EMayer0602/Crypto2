@@ -674,7 +674,7 @@ def normalize_params(row: pd.Series, indicator_key: str) -> tuple[float, float]:
     return float(param_a), float(param_b)
 
 
-def build_strategy_context(row: pd.Series, default_max_hold_bars: int = 2) -> StrategyContext:
+def build_strategy_context(row: pd.Series, default_max_hold_bars: int = 0) -> StrategyContext:
     symbol = row["Symbol"].strip()
     direction = row["Direction"].strip().lower()
     indicator_key = row["Indicator"].strip()
@@ -683,9 +683,9 @@ def build_strategy_context(row: pd.Series, default_max_hold_bars: int = 2) -> St
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
     min_hold_bars = int(min_hold_days * st.BARS_PER_DAY)
-    # Time-based exit: use CSV value if present, otherwise use default
+    # Time-based exit: use CSV value if present (including 0!), otherwise use default
     csv_max_hold = parse_float(row.get("MaxHoldBars"))
-    max_hold_bars = int(csv_max_hold) if csv_max_hold is not None and csv_max_hold > 0 else default_max_hold_bars
+    max_hold_bars = int(csv_max_hold) if csv_max_hold is not None else default_max_hold_bars
     return StrategyContext(
         symbol=symbol,
         direction=direction,
@@ -2157,7 +2157,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--start", type=str, default=None, help="Simulation start timestamp (ISO, default: 24h before end)")
     parser.add_argument("--end", type=str, default=None, help="Simulation end timestamp (ISO, default: now)")
     parser.add_argument("--lookback", type=int, default=None, help="Override LOOKBACK bars for data loading (e.g. 9000 for 1 year at 1h)")
-    parser.add_argument("--max-hold-bars", type=int, default=2, help="Time-based exit: force exit after N bars (default: 2, 0=disabled)")
+    parser.add_argument("--max-hold-bars", type=int, default=0, help="Time-based exit: force exit after N bars (0=use CSV value or disabled)")
     parser.add_argument("--use-saved-state", action="store_true", help="Seed simulations with the saved JSON state instead of a fresh account")
     parser.add_argument("--sim-log", type=str, default=SIMULATION_LOG_FILE, help="CSV path for simulated trades")
     parser.add_argument("--sim-json", type=str, default=SIMULATION_LOG_JSON, help="JSON path for simulated trades")

@@ -352,40 +352,40 @@ def get_data_exchange():
 	return _data_exchange
 
 
-def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
-	"""Lade OHLCV-Daten aus CSV-Cache, falls vorhanden.
+OHLCV_CACHE_START = "2024-05-01"  # Cache beginnt ab diesem Datum
+OHLCV_CACHE_TIMEFRAMES = ["1h", "4h", "6h", "8h", "12h", "1d"]  # Zu cachende Timeframes
+# Binance unterstützt direkt: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
 
-	Cache-Dateien haben Format: SYMBOL_TIMEFRAME.csv (z.B. BTC_EUR_1h.csv)
-	Erwartete Spalten: timestamp (oder datetime), open, high, low, close, volume
-	"""
-	if not OHLCV_CACHE_DIR or not os.path.isdir(OHLCV_CACHE_DIR):
-		return None
 
-	# Dateiname: BTC/EUR -> BTC_EUR_1h.csv
+def _get_cache_path(symbol, timeframe):
+	"""Gibt den Cache-Dateipfad für ein Symbol und Timeframe zurück."""
 	symbol_clean = symbol.replace("/", "_")
-	cache_file = os.path.join(OHLCV_CACHE_DIR, f"{symbol_clean}_{timeframe}.csv")
+	return os.path.join(OHLCV_CACHE_DIR, f"{symbol_clean}_{timeframe}.csv")
 
-	if not os.path.exists(cache_file):
+
+def _save_ohlcv_to_cache(df, symbol, timeframe):
+	"""Speichert OHLCV-DataFrame in CSV-Cache."""
+	if df is None or df.empty:
+		return
+	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
+	cache_path = _get_cache_path(symbol, timeframe)
+	# Konvertiere Index zu UTC für konsistente Speicherung
+	df_save = df.copy()
+	if df_save.index.tzinfo is not None:
+		df_save.index = df_save.index.tz_convert("UTC")
+	df_save.index.name = "timestamp"
+	df_save.to_csv(cache_path)
+	print(f"[Cache] {len(df_save)} Kerzen gespeichert: {cache_path}")
+
+
+def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
+	"""Lade OHLCV-Daten aus CSV-Cache."""
+	cache_path = _get_cache_path(symbol, timeframe)
+	if not os.path.exists(cache_path):
 		return None
 
 	try:
-		df = pd.read_csv(cache_file)
-
-		# Finde Timestamp-Spalte
-		ts_col = None
-		for col in ["timestamp", "datetime", "date", "time", "Timestamp", "DateTime", "Date"]:
-			if col in df.columns:
-				ts_col = col
-				break
-
-		if ts_col is None:
-			# Versuche erste Spalte als Index
-			df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
-			if df.index.name is None:
-				df.index.name = "timestamp"
-		else:
-			df[ts_col] = pd.to_datetime(df[ts_col], utc=True, errors="coerce")
-			df = df.set_index(ts_col)
+		df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
 
 		# Konvertiere zu Berlin Timezone
 		if df.index.tzinfo is None:
@@ -393,41 +393,188 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 		df.index = df.index.tz_convert(BERLIN_TZ)
 
 		# Stelle sicher, dass OHLCV-Spalten vorhanden sind
-		required_cols = ["open", "high", "low", "close", "volume"]
-		# Case-insensitive check
 		df.columns = df.columns.str.lower()
+		required_cols = ["open", "high", "low", "close", "volume"]
 		missing = [c for c in required_cols if c not in df.columns]
 		if missing:
-			print(f"[Cache] {cache_file}: Fehlende Spalten {missing}")
 			return None
 
 		df = df[required_cols].copy()
 		df = df.sort_index()
+		df = df[~df.index.duplicated(keep="last")]
 
-		# Filtere nach Datum wenn angegeben
+		# Filtere nach Datum
 		if start_date is not None:
-			if isinstance(start_date, str):
-				start_date = pd.Timestamp(start_date, tz=BERLIN_TZ)
-			elif start_date.tzinfo is None:
-				start_date = start_date.tz_localize(BERLIN_TZ)
-			df = df[df.index >= start_date]
+			start_ts = pd.Timestamp(start_date, tz=BERLIN_TZ) if isinstance(start_date, str) else start_date
+			if start_ts.tzinfo is None:
+				start_ts = start_ts.tz_localize(BERLIN_TZ)
+			df = df[df.index >= start_ts]
 
 		if end_date is not None:
-			if isinstance(end_date, str):
-				end_date = pd.Timestamp(end_date, tz=BERLIN_TZ)
-			elif end_date.tzinfo is None:
-				end_date = end_date.tz_localize(BERLIN_TZ)
-			df = df[df.index <= end_date]
+			end_ts = pd.Timestamp(end_date, tz=BERLIN_TZ) if isinstance(end_date, str) else end_date
+			if end_ts.tzinfo is None:
+				end_ts = end_ts.tz_localize(BERLIN_TZ)
+			df = df[df.index <= end_ts]
 
-		if df.empty:
-			return None
-
-		print(f"[Cache] {len(df)} Kerzen aus {cache_file} geladen ({df.index.min().date()} bis {df.index.max().date()})")
-		return df
+		return df if not df.empty else None
 
 	except Exception as exc:
-		print(f"[Cache] Fehler beim Laden von {cache_file}: {exc}")
+		print(f"[Cache] Fehler beim Laden von {cache_path}: {exc}")
 		return None
+
+
+def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
+	"""Lade OHLCV von Binance und speichere in Cache. Aktualisiert bestehenden Cache."""
+	import time as time_module
+
+	if start_date is None:
+		start_date = OHLCV_CACHE_START
+
+	start_dt = pd.Timestamp(start_date, tz=BERLIN_TZ) if isinstance(start_date, str) else start_date
+	if start_dt.tzinfo is None:
+		start_dt = start_dt.tz_localize(BERLIN_TZ)
+	end_dt = pd.Timestamp.now(BERLIN_TZ)
+
+	# Prüfe ob Cache existiert und hole letzten Timestamp
+	existing_df = _load_ohlcv_from_cache(symbol, timeframe)
+	if existing_df is not None and not existing_df.empty:
+		# Aktualisiere nur ab letztem Eintrag
+		last_ts = existing_df.index.max()
+		start_dt = last_ts  # Überlappung für Merge
+		print(f"[Cache] Aktualisiere {symbol} {timeframe} ab {start_dt.date()}")
+	else:
+		existing_df = pd.DataFrame()
+		print(f"[Cache] Lade {symbol} {timeframe} von {start_dt.date()} bis {end_dt.date()}...")
+
+	# Prüfe ob Binance diesen Timeframe direkt unterstützt
+	exchange = get_data_exchange()
+	supported_tfs = getattr(exchange, "timeframes", {}) or {}
+
+	if timeframe not in supported_tfs:
+		# Synthetisiere aus 1h-Daten
+		print(f"[Cache] {timeframe} nicht von Binance unterstützt, synthetisiere aus 1h...")
+		base_df = _fetch_and_cache_ohlcv(symbol, "1h", start_date)
+		if base_df is None or base_df.empty:
+			return None
+		tf_minutes = timeframe_to_minutes(timeframe)
+		synth = base_df.resample(f"{tf_minutes}min", label="right", closed="right").agg({
+			"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+		}).dropna()
+		_save_ohlcv_to_cache(synth, symbol, timeframe)
+		return synth
+
+	# Lade von Binance in Batches
+	start_ms = int(start_dt.timestamp() * 1000)
+	end_ms = int(end_dt.timestamp() * 1000)
+	tf_minutes = timeframe_to_minutes(timeframe)
+	batch_size = 1000
+
+	all_data = []
+	current_ms = start_ms
+
+	while current_ms < end_ms:
+		try:
+			ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=current_ms, limit=batch_size)
+			if not ohlcv:
+				break
+			all_data.extend(ohlcv)
+			last_ts = ohlcv[-1][0]
+			if last_ts >= end_ms:
+				break
+			current_ms = last_ts + (tf_minutes * 60 * 1000)
+			time_module.sleep(0.1)  # Rate limiting
+		except Exception as exc:
+			print(f"[Cache] API-Fehler für {symbol} {timeframe}: {exc}")
+			break
+
+	if not all_data:
+		return existing_df if not existing_df.empty else None
+
+	# Konvertiere zu DataFrame
+	cols = ["timestamp", "open", "high", "low", "close", "volume"]
+	new_df = pd.DataFrame(all_data, columns=cols)
+	new_df["timestamp"] = pd.to_datetime(new_df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+	new_df = new_df.set_index("timestamp")
+	new_df = new_df[~new_df.index.duplicated(keep="last")]
+
+	# Merge mit existierenden Daten
+	if not existing_df.empty:
+		combined = pd.concat([existing_df, new_df])
+		combined = combined[~combined.index.duplicated(keep="last")]
+		combined = combined.sort_index()
+	else:
+		combined = new_df.sort_index()
+
+	# Speichere in Cache
+	_save_ohlcv_to_cache(combined, symbol, timeframe)
+
+	print(f"[Cache] {len(combined)} Kerzen für {symbol} {timeframe} ({combined.index.min().date()} bis {combined.index.max().date()})")
+	return combined
+
+
+def _build_current_bar_from_1m(symbol, timeframe):
+	"""Baut den aktuellen unvollständigen Bar aus 1-Minuten-Daten."""
+	try:
+		exchange = get_data_exchange()
+		tf_minutes = timeframe_to_minutes(timeframe)
+
+		# Hole letzte tf_minutes + buffer an 1m-Daten
+		ohlcv_1m = exchange.fetch_ohlcv(symbol, timeframe="1m", limit=tf_minutes + 5)
+		if not ohlcv_1m:
+			return None
+
+		cols = ["timestamp", "open", "high", "low", "close", "volume"]
+		df_1m = pd.DataFrame(ohlcv_1m, columns=cols)
+		df_1m["timestamp"] = pd.to_datetime(df_1m["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+		df_1m = df_1m.set_index("timestamp")
+
+		# Resample zum Ziel-Timeframe
+		synth = df_1m.resample(f"{tf_minutes}min", label="right", closed="right").agg({
+			"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+		}).dropna()
+
+		if synth.empty:
+			return None
+
+		# Nur den aktuellen (letzten, möglicherweise unvollständigen) Bar
+		return synth.iloc[[-1]]
+
+	except Exception as exc:
+		print(f"[Cache] Fehler beim Bauen des aktuellen Bars: {exc}")
+		return None
+
+
+def ensure_ohlcv_cache(symbol, timeframe, start_date=None):
+	"""Stellt sicher, dass OHLCV-Cache existiert und aktuell ist. Gibt DataFrame zurück."""
+	# Versuche aus Cache zu laden
+	cached = _load_ohlcv_from_cache(symbol, timeframe, start_date)
+
+	now = pd.Timestamp.now(BERLIN_TZ)
+	tf_minutes = timeframe_to_minutes(timeframe)
+	threshold = now - pd.Timedelta(minutes=tf_minutes * 2)  # Cache gilt als veraltet nach 2 Bars
+
+	need_update = False
+	if cached is None or cached.empty:
+		need_update = True
+	elif cached.index.max() < threshold:
+		need_update = True
+
+	if need_update:
+		cached = _fetch_and_cache_ohlcv(symbol, timeframe, start_date)
+
+	if cached is None or cached.empty:
+		return None
+
+	# Füge aktuellen Bar aus 1m-Daten hinzu
+	current_bar = _build_current_bar_from_1m(symbol, timeframe)
+	if current_bar is not None:
+		# Ersetze letzten Bar falls gleicher Timestamp, sonst füge hinzu
+		combined = pd.concat([cached, current_bar])
+		combined = combined[~combined.index.duplicated(keep="last")]
+		combined = combined.sort_index()
+		return combined
+
+	return cached
 
 
 def _fetch_direct_ohlcv(symbol, timeframe, limit, since_ms=None):
@@ -514,7 +661,7 @@ def _generate_synthetic_ohlcv(symbol, timeframe, start_date, end_date=None):
 
 
 def _fetch_historical_ohlcv(symbol, timeframe, start_date, end_date=None):
-	"""Lade historische OHLCV-Daten in mehreren Batches.
+	"""Lade historische OHLCV-Daten mit Auto-Cache.
 
 	Args:
 		symbol: Trading-Paar (z.B. "BTC/EUR")
@@ -525,9 +672,7 @@ def _fetch_historical_ohlcv(symbol, timeframe, start_date, end_date=None):
 	Returns:
 		DataFrame mit OHLCV-Daten
 	"""
-	import time as time_module
-
-	# Konvertiere Start/End zu Millisekunden
+	# Konvertiere Timestamps
 	if isinstance(start_date, str):
 		start_dt = pd.Timestamp(start_date, tz=BERLIN_TZ)
 	else:
@@ -540,54 +685,17 @@ def _fetch_historical_ohlcv(symbol, timeframe, start_date, end_date=None):
 	else:
 		end_dt = pd.Timestamp(end_date).tz_localize(BERLIN_TZ) if end_date.tzinfo is None else end_date
 
-	# Versuche zuerst den CSV-Cache
-	cached_df = _load_ohlcv_from_cache(symbol, timeframe, start_dt, end_dt)
-	if cached_df is not None and not cached_df.empty:
-		return cached_df
-
-	print(f"[Data] Lade historische Daten für {symbol} von {start_dt.date()} bis {end_dt.date()}...")
-
-	# Versuche die API
-	try:
-		exchange = get_data_exchange()
-
-		start_ms = int(start_dt.timestamp() * 1000)
-		end_ms = int(end_dt.timestamp() * 1000)
-
-		tf_minutes = timeframe_to_minutes(timeframe)
-		batch_size = 1000  # Binance Limit
-
-		all_data = []
-		current_ms = start_ms
-
-		while current_ms < end_ms:
-			ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=current_ms, limit=batch_size)
-			if not ohlcv:
-				break
-			all_data.extend(ohlcv)
-			last_ts = ohlcv[-1][0]
-			if last_ts >= end_ms:
-				break
-			current_ms = last_ts + (tf_minutes * 60 * 1000)
-			time_module.sleep(0.1)  # Rate limiting
-
-		if all_data:
-			cols = ["timestamp", "open", "high", "low", "close", "volume"]
-			df = pd.DataFrame(all_data, columns=cols)
-			df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
-			df = df.set_index("timestamp")
-			df = df[~df.index.duplicated(keep="last")]
-			df = df[(df.index >= start_dt) & (df.index <= end_dt)]
-			df = df.sort_index()
-			print(f"[Data] {len(df)} Kerzen geladen für {symbol}")
+	# Verwende Auto-Cache-System (lädt von Binance und speichert automatisch)
+	df = ensure_ohlcv_cache(symbol, timeframe, start_dt)
+	if df is not None and not df.empty:
+		# Filtere auf gewünschten Zeitraum
+		df = df[(df.index >= start_dt) & (df.index <= end_dt)]
+		if not df.empty:
+			print(f"[Data] {len(df)} Kerzen für {symbol} {timeframe} ({df.index.min().date()} bis {df.index.max().date()})")
 			return df
 
-	except Exception as exc:
-		print(f"[Warn] API nicht erreichbar: {exc}")
-		print(f"[Data] Verwende synthetische Daten für {symbol}...")
-
-	# Fallback: Synthetische Daten
-	df = _generate_synthetic_ohlcv(symbol, timeframe, start_date, end_date)
+	# Fallback: Synthetische Daten falls Cache fehlschlägt
+	df = _generate_synthetic_ohlcv(symbol, timeframe, start_dt, end_dt)
 	print(f"[Data] {len(df)} synthetische Kerzen generiert für {symbol}")
 	return df
 
