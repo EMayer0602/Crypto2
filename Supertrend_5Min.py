@@ -388,7 +388,7 @@ def preload_ohlcv_cache(symbols=None, timeframes=None, start_date=None):
 				cached = _load_ohlcv_from_cache(symbol, tf)
 
 				# KRITISCH: Bei Ladefehler NIEMALS überschreiben!
-				if cached == "LOAD_ERROR":
+				if isinstance(cached, str) and cached == "LOAD_ERROR":
 					print(f"[Cache] ÜBERSPRINGE {symbol} {tf} - Ladefehler, Datei wird geschützt!")
 					skipped += 1
 					continue
@@ -486,26 +486,15 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 		return None
 
 	try:
-		df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
+		# Lese OHNE parse_dates um Timezone-Probleme zu vermeiden
+		df = pd.read_csv(cache_path, index_col=0)
 
-		# Robuste Timezone-Behandlung
-		if df.index.dtype == 'object':
-			# Index ist noch String - parse mit timezone
-			df.index = pd.to_datetime(df.index)
+		# Parse Timestamps manuell mit UTC-Konvertierung
+		# Format: "2024-05-01 02:00:00+02:00"
+		df.index = pd.to_datetime(df.index, utc=True)
 
-		# Prüfe ob Timezone vorhanden
-		has_tz = hasattr(df.index, 'tz') and df.index.tz is not None
-
-		if not has_tz:
-			# Keine Timezone - nehme Berlin an
-			try:
-				df.index = df.index.tz_localize(BERLIN_TZ)
-			except Exception:
-				# Falls schon lokalisiert, konvertiere
-				df.index = df.index.tz_convert(BERLIN_TZ)
-		else:
-			# Hat Timezone - konvertiere zu Berlin
-			df.index = df.index.tz_convert(BERLIN_TZ)
+		# Konvertiere zu Berlin-Zeit
+		df.index = df.index.tz_convert(BERLIN_TZ)
 
 		# Stelle sicher, dass OHLCV-Spalten vorhanden sind
 		df.columns = df.columns.str.lower()
@@ -555,7 +544,7 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 	existing_df = _load_ohlcv_from_cache(symbol, timeframe)
 
 	# Bei Ladefehler: NIEMALS überschreiben!
-	if existing_df == "LOAD_ERROR":
+	if isinstance(existing_df, str) and existing_df == "LOAD_ERROR":
 		print(f"[Cache] ABBRUCH: {symbol} {timeframe} wird NICHT überschrieben!")
 		return None
 
@@ -706,7 +695,7 @@ def ensure_ohlcv_cache(symbol, timeframe, start_date=None):
 	cached = _load_ohlcv_from_cache(symbol, timeframe, start_date)
 
 	# KRITISCH: Bei Ladefehler NIEMALS überschreiben!
-	if cached == "LOAD_ERROR":
+	if isinstance(cached, str) and cached == "LOAD_ERROR":
 		print(f"[Cache] ABBRUCH in ensure_ohlcv_cache: {symbol} {timeframe} wird NICHT überschrieben!")
 		return None
 
