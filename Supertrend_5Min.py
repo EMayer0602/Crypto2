@@ -437,10 +437,21 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 	try:
 		df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
 
-		# Konvertiere zu Berlin Timezone
-		if df.index.tzinfo is None:
-			df.index = df.index.tz_localize("UTC")
-		df.index = df.index.tz_convert(BERLIN_TZ)
+		# Konvertiere zu Berlin Timezone (handle verschiedene Pandas-Versionen)
+		try:
+			tz = df.index.tz
+		except AttributeError:
+			tz = getattr(df.index, 'tzinfo', None)
+
+		if tz is None:
+			# Versuche Timezone aus String zu parsen (z.B. "2024-05-01 00:00:00+01:00")
+			if len(df) > 0 and isinstance(df.index[0], str):
+				df.index = pd.to_datetime(df.index, utc=True)
+			else:
+				df.index = df.index.tz_localize(BERLIN_TZ)
+
+		if df.index.tz != BERLIN_TZ:
+			df.index = df.index.tz_convert(BERLIN_TZ)
 
 		# Stelle sicher, dass OHLCV-Spalten vorhanden sind
 		df.columns = df.columns.str.lower()
@@ -540,6 +551,7 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 	all_data = []
 	current_ms = start_ms
 	batch_count = 0
+	first_available_ts = None
 
 	while current_ms < end_ms:
 		try:
@@ -548,9 +560,16 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 				break
 			all_data.extend(ohlcv)
 			batch_count += 1
+
+			# Prüfe ersten Datenpunkt - Binance könnte weniger Historie haben!
+			if first_available_ts is None:
+				first_available_ts = ohlcv[0][0]
+				first_dt = pd.Timestamp(first_available_ts, unit="ms", tz="UTC").tz_convert(BERLIN_TZ)
+				if first_dt > start_dt + pd.Timedelta(days=7):
+					print(f"[Cache] WARNUNG: Binance hat für {symbol} erst Daten ab {first_dt.date()}, nicht ab {start_dt.date()}!")
+
 			last_ts = ohlcv[-1][0]
 			if batch_count % 10 == 0:
-				# Fortschritt anzeigen
 				progress_dt = pd.Timestamp(last_ts, unit="ms", tz="UTC").tz_convert(BERLIN_TZ)
 				print(f"[Cache]   ... {symbol} {timeframe}: {progress_dt.date()} ({len(all_data)} Kerzen)")
 			if last_ts >= end_ms:
