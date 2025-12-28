@@ -2230,6 +2230,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Pre-load OHLCV cache for all symbols and timeframes from 2024-05-01 before simulation",
     )
+    parser.add_argument(
+        "--force-reload-cache",
+        action="store_true",
+        help="Delete ALL cache files and reload from 2024-05-01 (use if cache is corrupted)",
+    )
     return parser.parse_args(argv)
 
 
@@ -2344,8 +2349,18 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
             st.HTF_LOOKBACK = htf_bars_needed
         print(f"[Config] LOOKBACK set to {st.LOOKBACK} bars, HTF_LOOKBACK to {st.HTF_LOOKBACK}")
 
+    # Force reload: Delete ALL cache files first
+    if args.force_reload_cache:
+        import shutil
+        cache_dir = st.OHLCV_CACHE_DIR
+        if os.path.isdir(cache_dir):
+            print(f"[Cache] LÖSCHE gesamten Cache: {cache_dir}")
+            shutil.rmtree(cache_dir)
+            os.makedirs(cache_dir, exist_ok=True)
+        print("[Cache] Cache gelöscht. Lade alle Daten neu ab 2024-05-01...")
+
     # Pre-load OHLCV cache for all symbols and timeframes if requested or needed for simulation
-    if args.preload_cache or (args.simulate and not args.replay_trades_csv):
+    if args.force_reload_cache or args.preload_cache or (args.simulate and not args.replay_trades_csv):
         print("[Cache] Pre-loading OHLCV data for all symbols and timeframes...")
         st.preload_ohlcv_cache(
             symbols=allowed_symbols if allowed_symbols else st.SYMBOLS,

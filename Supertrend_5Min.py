@@ -394,15 +394,15 @@ def _get_cache_path(symbol, timeframe):
 
 
 def _save_ohlcv_to_cache(df, symbol, timeframe):
-	"""Speichert OHLCV-DataFrame in CSV-Cache."""
+	"""Speichert OHLCV-DataFrame in CSV-Cache (Berlin-Zeit UTC+1)."""
 	if df is None or df.empty:
 		return
 	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
 	cache_path = _get_cache_path(symbol, timeframe)
-	# Konvertiere Index zu UTC für konsistente Speicherung
 	df_save = df.copy()
+	# Speichere in Berlin-Zeit (UTC+1)
 	if df_save.index.tzinfo is not None:
-		df_save.index = df_save.index.tz_convert("UTC")
+		df_save.index = df_save.index.tz_convert(BERLIN_TZ)
 	df_save.index.name = "timestamp"
 	df_save.to_csv(cache_path)
 	print(f"[Cache] {len(df_save)} Kerzen gespeichert: {cache_path}")
@@ -454,26 +454,44 @@ def _load_ohlcv_from_cache(symbol, timeframe, start_date=None, end_date=None):
 
 
 def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
-	"""Lade OHLCV von Binance und speichere in Cache. Aktualisiert bestehenden Cache.
+	"""Lade OHLCV von Binance und speichere in Cache.
 
-	WICHTIG: Neuer Cache wird IMMER ab OHLCV_CACHE_START (2024-05-01) geladen,
-	unabhängig vom übergebenen start_date. Das start_date wird nur für Filterung verwendet.
+	WICHTIG: Cache wird IMMER ab OHLCV_CACHE_START (2024-05-01) geladen.
+	Falls bestehender Cache nicht weit genug zurückreicht, wird er gelöscht.
 	"""
 	import time as time_module
 
+	required_start = pd.Timestamp(OHLCV_CACHE_START, tz=BERLIN_TZ)
 	end_dt = pd.Timestamp.now(BERLIN_TZ)
 
-	# Prüfe ob Cache existiert und hole letzten Timestamp
+	# Prüfe ob Cache existiert
 	existing_df = _load_ohlcv_from_cache(symbol, timeframe)
+
+	# VALIDIERUNG: Cache muss Daten ab OHLCV_CACHE_START haben!
 	if existing_df is not None and not existing_df.empty:
-		# Aktualisiere nur ab letztem Eintrag
+		cache_start = existing_df.index.min()
+		# Toleranz: Cache muss spätestens 7 Tage nach OHLCV_CACHE_START beginnen
+		max_allowed_start = required_start + pd.Timedelta(days=7)
+		if cache_start > max_allowed_start:
+			# Cache ist zu neu - löschen und neu laden!
+			cache_path = _get_cache_path(symbol, timeframe)
+			print(f"[Cache] WARNUNG: {symbol} {timeframe} beginnt erst {cache_start.date()}, erwartet {required_start.date()}")
+			print(f"[Cache] Lösche veralteten Cache und lade neu...")
+			try:
+				os.remove(cache_path)
+			except OSError:
+				pass
+			existing_df = None
+
+	if existing_df is not None and not existing_df.empty:
+		# Cache ist valide - nur aktualisieren ab letztem Eintrag
 		last_ts = existing_df.index.max()
-		start_dt = last_ts  # Überlappung für Merge
-		print(f"[Cache] Aktualisiere {symbol} {timeframe} ab {start_dt.date()}")
+		start_dt = last_ts
+		print(f"[Cache] Aktualisiere {symbol} {timeframe} ab {start_dt}")
 	else:
-		# NEUER Cache: IMMER ab OHLCV_CACHE_START laden!
+		# Kein Cache oder ungültig - komplett neu laden ab 2024-05-01
 		existing_df = pd.DataFrame()
-		start_dt = pd.Timestamp(OHLCV_CACHE_START, tz=BERLIN_TZ)
+		start_dt = required_start
 		print(f"[Cache] Lade {symbol} {timeframe} von {start_dt.date()} bis {end_dt.date()}...")
 
 	# Prüfe ob Binance diesen Timeframe direkt unterstützt
@@ -501,6 +519,7 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 
 	all_data = []
 	current_ms = start_ms
+	batch_count = 0
 
 	while current_ms < end_ms:
 		try:
@@ -508,7 +527,12 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 			if not ohlcv:
 				break
 			all_data.extend(ohlcv)
+			batch_count += 1
 			last_ts = ohlcv[-1][0]
+			if batch_count % 10 == 0:
+				# Fortschritt anzeigen
+				progress_dt = pd.Timestamp(last_ts, unit="ms", tz="UTC").tz_convert(BERLIN_TZ)
+				print(f"[Cache]   ... {symbol} {timeframe}: {progress_dt.date()} ({len(all_data)} Kerzen)")
 			if last_ts >= end_ms:
 				break
 			current_ms = last_ts + (tf_minutes * 60 * 1000)
@@ -543,14 +567,19 @@ def _fetch_and_cache_ohlcv(symbol, timeframe, start_date=None):
 
 
 def _build_current_bar_from_1m(symbol, timeframe):
-	"""Baut den aktuellen unvollständigen Bar aus 1-Minuten-Daten."""
+	"""Baut den aktuellen unvollständigen Bar aus 1-Minuten-Daten.
+
+	Der aktuelle Balken wird aus 1m-Daten synthetisiert und hat den
+	Timestamp des Balken-ANFANGS (wie bei Binance-Daten).
+	"""
 	try:
 		exchange = get_data_exchange()
 		tf_minutes = timeframe_to_minutes(timeframe)
 
 		# Hole letzte tf_minutes + buffer an 1m-Daten
-		ohlcv_1m = exchange.fetch_ohlcv(symbol, timeframe="1m", limit=tf_minutes + 5)
+		ohlcv_1m = exchange.fetch_ohlcv(symbol, timeframe="1m", limit=tf_minutes + 10)
 		if not ohlcv_1m:
+			print(f"[Cache] Keine 1m-Daten für {symbol}")
 			return None
 
 		cols = ["timestamp", "open", "high", "low", "close", "volume"]
@@ -558,19 +587,22 @@ def _build_current_bar_from_1m(symbol, timeframe):
 		df_1m["timestamp"] = pd.to_datetime(df_1m["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
 		df_1m = df_1m.set_index("timestamp")
 
-		# Resample zum Ziel-Timeframe
-		synth = df_1m.resample(f"{tf_minutes}min", label="right", closed="right").agg({
+		# Resample zum Ziel-Timeframe (label="left" = Timestamp am Balken-Anfang wie Binance)
+		synth = df_1m.resample(f"{tf_minutes}min", label="left", closed="left").agg({
 			"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
 		}).dropna()
 
 		if synth.empty:
+			print(f"[Cache] Resample für {symbol} {timeframe} ergab keine Daten")
 			return None
 
 		# Nur den aktuellen (letzten, möglicherweise unvollständigen) Bar
-		return synth.iloc[[-1]]
+		current = synth.iloc[[-1]]
+		print(f"[Cache] Aktueller Bar für {symbol} {timeframe}: {current.index[0]} (aus {len(df_1m)} 1m-Kerzen)")
+		return current
 
 	except Exception as exc:
-		print(f"[Cache] Fehler beim Bauen des aktuellen Bars: {exc}")
+		print(f"[Cache] Fehler beim Bauen des aktuellen Bars für {symbol}: {exc}")
 		return None
 
 
