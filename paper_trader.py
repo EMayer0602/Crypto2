@@ -2092,18 +2092,23 @@ def run_simulation(
     buffer = pd.Timedelta(minutes=BASE_BAR_MINUTES * 5)
     all_trades: List[TradeResult] = []
     stake_value = fixed_stake if fixed_stake is not None else DEFAULT_FIXED_STAKE
+    print(f"[Simulation] Processing {len(best_df)} strategy rows...")
     for _, row in best_df.iterrows():
         context = build_strategy_context(row)
         config = cfg_lookup.get(context.symbol)
         if not config or not direction_allowed(config, context.direction):
+            print(f"[Skip] {context.symbol} {context.direction}: No config or direction not allowed")
             continue
         df_full = build_dataframe_for_context(context)
         if df_full.empty:
+            print(f"[Skip] {context.symbol} {context.direction}: Empty dataframe")
             continue
         mask = (df_full.index >= (start_ts - buffer)) & (df_full.index <= end_ts)
         df_range = df_full.loc[mask]
         if len(df_range) < 2:
+            print(f"[Skip] {context.symbol} {context.direction}: Only {len(df_range)} bars in range")
             continue
+        print(f"[Process] {context.symbol} {context.direction} {context.htf}: {len(df_range)} bars")
         for idx in range(1, len(df_range)):
             curr_ts = df_range.index[idx]
             if curr_ts < start_ts:
