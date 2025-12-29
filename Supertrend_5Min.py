@@ -305,17 +305,14 @@ def _load_csv_cache(symbol: str, timeframe: str) -> pd.DataFrame:
 	if not os.path.exists(cache_path):
 		return pd.DataFrame()
 	try:
-		df = pd.read_csv(cache_path, parse_dates=["timestamp"], index_col="timestamp")
-		# Handle timezone - check if index has timezone info
-		if hasattr(df.index, 'tz') and df.index.tz is not None:
-			df.index = df.index.tz_convert(BERLIN_TZ)
-		else:
-			# Try to localize as UTC first, then convert
-			try:
-				df.index = df.index.tz_localize("UTC").tz_convert(BERLIN_TZ)
-			except TypeError:
-				# Already has timezone info embedded in the strings
-				df.index = pd.to_datetime(df.index, utc=True).tz_convert(BERLIN_TZ)
+		df = pd.read_csv(cache_path)
+		if "timestamp" not in df.columns:
+			print(f"[Cache] No timestamp column in {cache_path}")
+			return pd.DataFrame()
+		# Explicitly convert to DatetimeIndex with timezone handling
+		df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+		df = df.set_index("timestamp")
+		df.index = df.index.tz_convert(BERLIN_TZ)
 		return df
 	except Exception as exc:
 		print(f"[Cache] Failed to load {cache_path}: {exc}")
