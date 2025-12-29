@@ -492,29 +492,43 @@ def fetch_data(symbol, timeframe, limit):
 		cache_df = None
 		exchange = get_data_exchange()
 		supported_timeframes = getattr(exchange, "timeframes", {}) or {}
-		if timeframe in supported_timeframes:
+
+		# First try to load from CSV cache
+		cached_df = _load_csv_cache(symbol, timeframe)
+
+		if not cached_df.empty and len(cached_df) >= limit:
+			# CSV cache has enough data
+			cache_df = cached_df.tail(limit)
+		elif timeframe == TIMEFRAME:
+			# Base timeframe - fetch directly and cache
 			cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
 		else:
+			# HTF: Synthesize from base timeframe (1h) cache for full historical coverage
+			# This avoids Binance's 1000-bar limit for HTF data
 			target_minutes = timeframe_to_minutes(timeframe)
 			base_minutes = timeframe_to_minutes(TIMEFRAME)
-			if target_minutes < base_minutes or target_minutes % base_minutes != 0:
-				raise ValueError(f"Cannot synthesize timeframe {timeframe} from base {TIMEFRAME}")
-			factor = target_minutes // base_minutes
-			base_limit = limit * factor + 10
-			base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
-			if base_df_source.empty:
-				cache_df = base_df_source
+			if target_minutes >= base_minutes and target_minutes % base_minutes == 0:
+				factor = target_minutes // base_minutes
+				base_limit = limit * factor + 50  # Extra buffer for resampling
+				base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
+				if not base_df_source.empty:
+					agg_rule = f"{target_minutes}min"
+					synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
+						"open": "first",
+						"high": "max",
+						"low": "min",
+						"close": "last",
+						"volume": "sum",
+					})
+					synth = synth.dropna(subset=["open", "high", "low", "close"])
+					cache_df = synth.tail(limit)
+					print(f"[Data] {symbol} {timeframe}: Synthesized {len(cache_df)} bars from {TIMEFRAME} cache")
+				else:
+					cache_df = pd.DataFrame()
 			else:
-				agg_rule = f"{target_minutes}min"
-				synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
-					"open": "first",
-					"high": "max",
-					"low": "min",
-					"close": "last",
-					"volume": "sum",
-				})
-				synth = synth.dropna(subset=["open", "high", "low", "close"])
-				cache_df = synth.tail(limit)
+				# Fallback: try direct fetch (will only get 1000 bars)
+				cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
+
 		DATA_CACHE[key] = cache_df
 		base_df = cache_df
 	df_copy = base_df.copy() if base_df is not None else pd.DataFrame()
