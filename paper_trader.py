@@ -41,14 +41,14 @@ SIMULATION_OPEN_POSITIONS_JSON = "paper_trading_actual_trades.json"
 SIMULATION_SUMMARY_HTML = os.path.join("report_html", "trading_summary.html")
 SIMULATION_SUMMARY_JSON = os.path.join("report_html", "trading_summary.json")
 BEST_PARAMS_CSV = st.OVERALL_PARAMS_CSV
-START_TOTAL_CAPITAL = 14_000.0
+START_TOTAL_CAPITAL = 16_000.0
 MAX_OPEN_POSITIONS = 5
-STAKE_DIVISOR = 7 # stake = current total_capital / STAKE_DIVISOR
+STAKE_DIVISOR = 8 # stake = current total_capital / STAKE_DIVISOR
 DEFAULT_DIRECTION_CAPITAL = 2_800.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
 DEFAULT_FIXED_STAKE = None  # Use dynamic sizing unless explicitly overridden
-DEFAULT_ALLOWED_DIRECTIONS = ["long"]
+DEFAULT_ALLOWED_DIRECTIONS = ["long", "short"]
 DEFAULT_USE_TESTNET = True
 SIGNAL_DEBUG = False
 DEFAULT_SIGNAL_INTERVAL_MIN = 15
@@ -130,6 +130,7 @@ class Position:
     param_b: float
     atr_mult: Optional[float]
     min_hold_bars: int
+    max_hold_bars: int
     entry_price: float
     entry_time: str
     entry_atr: float
@@ -147,6 +148,7 @@ class StrategyContext:
     param_b: float
     atr_mult: Optional[float]
     min_hold_bars: int
+    max_hold_bars: int = 0  # Time-based exit: Zwangs-Exit nach N Bars (0 = deaktiviert)
 
     @property
     def key(self) -> str:
@@ -681,6 +683,7 @@ def build_strategy_context(row: pd.Series) -> StrategyContext:
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
     min_hold_bars = int(min_hold_days * st.BARS_PER_DAY)
+    max_hold_bars = int(parse_float(row.get("MaxHoldBars")) or 0)  # Time-based exit
     return StrategyContext(
         symbol=symbol,
         direction=direction,
@@ -690,6 +693,7 @@ def build_strategy_context(row: pd.Series) -> StrategyContext:
         param_b=param_b,
         atr_mult=atr_mult,
         min_hold_bars=min_hold_bars,
+        max_hold_bars=max_hold_bars,
     )
 
 
@@ -958,7 +962,7 @@ def find_last_signal_bar(df: pd.DataFrame, direction: str, lookback_hours: float
     return ts, price, ts >= cutoff
 
 
-def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], min_hold_bars: int) -> Optional[Dict]:
+def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], min_hold_bars: int, max_hold_bars: int = 0) -> Optional[Dict]:
     if len(df) < 2:
         return None
     curr = df.iloc[-1]
@@ -991,6 +995,11 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
     if exit_price is None and trend_flipped and bars_held >= max(0, min_hold_bars):
         exit_price = float(curr["close"])
         reason = "Trend flip"
+
+    # Time-based Exit: Zwangs-Exit nach max_hold_bars
+    if exit_price is None and max_hold_bars > 0 and bars_held >= max_hold_bars:
+        exit_price = float(curr["close"])
+        reason = f"Time exit ({max_hold_bars} bars)"
 
     if exit_price is None:
         return None
@@ -1033,7 +1042,7 @@ def process_snapshot(
     existing = find_position(state, context.key)
     if existing:
         prior_total = state["total_capital"]
-        exit_info = evaluate_exit(existing, df_slice, context.atr_mult, context.min_hold_bars)
+        exit_info = evaluate_exit(existing, df_slice, context.atr_mult, context.min_hold_bars, context.max_hold_bars)
         if exit_info:
             size_units = float(existing.get("size_units", 0.0))
             stake_val = float(existing.get("stake"))
@@ -1114,6 +1123,7 @@ def process_snapshot(
         param_b=context.param_b,
         atr_mult=context.atr_mult,
         min_hold_bars=context.min_hold_bars,
+        max_hold_bars=context.max_hold_bars,
         entry_price=entry_price,
         entry_time=latest_iso,
         entry_atr=float(df_slice.iloc[-1].get("atr", 0.0)),
@@ -1908,6 +1918,7 @@ def force_entry_position(
         param_b=context.param_b,
         atr_mult=context.atr_mult,
         min_hold_bars=context.min_hold_bars,
+        max_hold_bars=context.max_hold_bars,
         entry_price=entry_price,
         entry_time=entry_iso,
         entry_atr=entry_atr_val,
@@ -2080,6 +2091,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--simulate", action="store_true", help="Run a historical simulation instead of a single live tick")
     parser.add_argument("--start", type=str, default=None, help="Simulation start timestamp (ISO, default: 24h before end)")
     parser.add_argument("--end", type=str, default=None, help="Simulation end timestamp (ISO, default: now)")
+    parser.add_argument("--lookback", type=int, default=None, help="Override LOOKBACK bars for data loading (e.g. 9000 for 1 year at 1h)")
     parser.add_argument("--use-saved-state", action="store_true", help="Seed simulations with the saved JSON state instead of a fresh account")
     parser.add_argument("--sim-log", type=str, default=SIMULATION_LOG_FILE, help="CSV path for simulated trades")
     parser.add_argument("--sim-json", type=str, default=SIMULATION_LOG_JSON, help="JSON path for simulated trades")
@@ -2234,6 +2246,12 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> None:
         st.configure_exchange(use_testnet=use_testnet)
         order_executor = BinanceOrderExecutor(st.get_exchange())
         configure_exchange_flag = False
+
+    # Override LOOKBACK for simulations requiring more historical data
+    if args.lookback is not None and args.lookback > 0:
+        original_lookback = st.LOOKBACK
+        st.LOOKBACK = args.lookback
+        print(f"[Config] LOOKBACK set to {st.LOOKBACK} bars (was {original_lookback})")
 
     if args.simulate:
         trades: List[TradeResult] = []
