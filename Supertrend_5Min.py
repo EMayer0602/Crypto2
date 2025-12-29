@@ -290,15 +290,87 @@ def get_data_exchange():
 	return _data_exchange
 
 
+OHLCV_CACHE_DIR = os.path.join(os.path.dirname(__file__), "ohlcv_cache")
+
+
+def _get_cache_path(symbol: str, timeframe: str) -> str:
+	"""Get CSV cache file path for symbol/timeframe."""
+	safe_symbol = symbol.replace("/", "_")
+	return os.path.join(OHLCV_CACHE_DIR, f"{safe_symbol}_{timeframe}.csv")
+
+
+def _load_csv_cache(symbol: str, timeframe: str) -> pd.DataFrame:
+	"""Load cached OHLCV data from CSV file."""
+	cache_path = _get_cache_path(symbol, timeframe)
+	if not os.path.exists(cache_path):
+		return pd.DataFrame()
+	try:
+		df = pd.read_csv(cache_path, parse_dates=["timestamp"], index_col="timestamp")
+		if df.index.tz is None:
+			df.index = df.index.tz_localize("UTC").tz_convert(BERLIN_TZ)
+		else:
+			df.index = df.index.tz_convert(BERLIN_TZ)
+		return df
+	except Exception as exc:
+		print(f"[Cache] Failed to load {cache_path}: {exc}")
+		return pd.DataFrame()
+
+
+def _save_csv_cache(df: pd.DataFrame, symbol: str, timeframe: str) -> None:
+	"""Save OHLCV data to CSV cache file."""
+	if df.empty:
+		return
+	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
+	cache_path = _get_cache_path(symbol, timeframe)
+	try:
+		df_save = df.copy()
+		df_save.index.name = "timestamp"
+		df_save.to_csv(cache_path)
+	except Exception as exc:
+		print(f"[Cache] Failed to save {cache_path}: {exc}")
+
+
 def _fetch_direct_ohlcv(symbol, timeframe, limit):
+	"""Fetch OHLCV data using CSV cache + Binance API for new bars."""
+	# 1. Load existing cache
+	cached_df = _load_csv_cache(symbol, timeframe)
+
+	# 2. Determine what to fetch from Binance
 	exchange = get_data_exchange()
-	buffer = max(50, limit // 5)
-	fetch_limit = limit + buffer
-	ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=fetch_limit)
-	cols = ["timestamp", "open", "high", "low", "close", "volume"]
-	df = pd.DataFrame(ohlcv, columns=cols)
-	df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
-	return df.set_index("timestamp").tail(limit)
+	now_ms = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
+
+	if cached_df.empty:
+		# No cache - fetch max 1000 bars from Binance
+		print(f"[Cache] No cache for {symbol} {timeframe}, fetching from Binance...")
+		ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=1000)
+	else:
+		# Cache exists - fetch only new bars since last cached timestamp
+		last_ts = cached_df.index.max()
+		since_ms = int(last_ts.tz_convert("UTC").timestamp() * 1000)
+		ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ms, limit=1000)
+
+	# 3. Process new data from Binance
+	if ohlcv:
+		cols = ["timestamp", "open", "high", "low", "close", "volume"]
+		new_df = pd.DataFrame(ohlcv, columns=cols)
+		new_df["timestamp"] = pd.to_datetime(new_df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+		new_df = new_df.set_index("timestamp")
+
+		# 4. Merge with cache
+		if cached_df.empty:
+			combined_df = new_df
+		else:
+			combined_df = pd.concat([cached_df, new_df])
+			combined_df = combined_df[~combined_df.index.duplicated(keep="last")]
+			combined_df = combined_df.sort_index()
+
+		# 5. Save updated cache
+		_save_csv_cache(combined_df, symbol, timeframe)
+	else:
+		combined_df = cached_df
+
+	# 6. Return requested number of bars
+	return combined_df.tail(limit) if not combined_df.empty else combined_df
 
 
 def _maybe_append_synthetic_bar(df, symbol, timeframe):
