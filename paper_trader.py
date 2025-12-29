@@ -987,6 +987,12 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
             exit_price = stop_price
             reason = f"ATR stop x{atr_mult:.2f}"
 
+    # Time-based Exit: Zwangs-Exit nach max_hold_bars (PRIORITÄT!)
+    if exit_price is None and max_hold_bars > 0 and bars_held >= max_hold_bars:
+        exit_price = float(curr["close"])
+        reason = f"Time exit ({max_hold_bars} bars)"
+
+    # Trend-Flip nur wenn TimeExit nicht greift
     trend_curr = int(curr["trend_flag"])
     trend_prev = int(prev["trend_flag"])
     flip_long = long_mode and trend_prev == 1 and trend_curr == -1
@@ -995,11 +1001,6 @@ def evaluate_exit(position: Dict, df: pd.DataFrame, atr_mult: Optional[float], m
     if exit_price is None and trend_flipped and bars_held >= max(0, min_hold_bars):
         exit_price = float(curr["close"])
         reason = "Trend flip"
-
-    # Time-based Exit: Zwangs-Exit nach max_hold_bars
-    if exit_price is None and max_hold_bars > 0 and bars_held >= max_hold_bars:
-        exit_price = float(curr["close"])
-        reason = f"Time exit ({max_hold_bars} bars)"
 
     if exit_price is None:
         return None
