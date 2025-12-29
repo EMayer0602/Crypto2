@@ -317,17 +317,87 @@ def _load_csv_cache(symbol: str, timeframe: str) -> pd.DataFrame:
 
 
 def _save_csv_cache(df: pd.DataFrame, symbol: str, timeframe: str) -> None:
-	"""Save OHLCV data to CSV cache file."""
+	"""Save OHLCV data to CSV cache file. Only saves if new data is larger than existing."""
 	if df.empty:
 		return
 	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
 	cache_path = _get_cache_path(symbol, timeframe)
+
+	# Safety check: don't overwrite if existing cache is larger
+	if os.path.exists(cache_path):
+		try:
+			existing_df = pd.read_csv(cache_path)
+			if len(existing_df) > len(df):
+				print(f"[Cache] WARNING: Not overwriting {cache_path} - existing has {len(existing_df)} rows, new has {len(df)}")
+				return
+		except Exception:
+			pass
+
 	try:
 		df_save = df.copy()
 		df_save.index.name = "timestamp"
 		df_save.to_csv(cache_path)
+		print(f"[Cache] Saved {len(df)} bars to {cache_path}")
 	except Exception as exc:
 		print(f"[Cache] Failed to save {cache_path}: {exc}")
+
+
+def backfill_ohlcv_cache(symbol: str, timeframe: str, start_date: str = "2024-09-01") -> pd.DataFrame:
+	"""Backfill historical OHLCV data from Binance with multiple API calls."""
+	import time as time_module
+
+	exchange = get_data_exchange()
+	tf_minutes = timeframe_to_minutes(timeframe)
+	tf_ms = tf_minutes * 60 * 1000
+
+	start_ts = pd.Timestamp(start_date, tz=BERLIN_TZ)
+	since_ms = int(start_ts.tz_convert("UTC").timestamp() * 1000)
+	now_ms = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
+
+	all_data = []
+	batch_count = 0
+
+	print(f"[Backfill] {symbol} {timeframe} from {start_date}...")
+
+	while since_ms < now_ms:
+		try:
+			ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ms, limit=1000)
+			if not ohlcv:
+				break
+			all_data.extend(ohlcv)
+			last_ts = ohlcv[-1][0]
+			since_ms = last_ts + tf_ms  # Next batch starts after last bar
+			batch_count += 1
+			print(f"[Backfill] {symbol}: Batch {batch_count}, total {len(all_data)} bars")
+			time_module.sleep(0.2)  # Rate limit
+		except Exception as exc:
+			print(f"[Backfill] Error fetching {symbol}: {exc}")
+			break
+
+	if not all_data:
+		return pd.DataFrame()
+
+	cols = ["timestamp", "open", "high", "low", "close", "volume"]
+	df = pd.DataFrame(all_data, columns=cols)
+	df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(BERLIN_TZ)
+	df = df.set_index("timestamp")
+	df = df[~df.index.duplicated(keep="last")]
+	df = df.sort_index()
+
+	# Save to cache
+	_save_csv_cache(df, symbol, timeframe)
+	print(f"[Backfill] {symbol} {timeframe}: {len(df)} bars saved")
+
+	return df
+
+
+def backfill_all_symbols(start_date: str = "2024-09-01") -> None:
+	"""Backfill all symbols in SYMBOLS list."""
+	for symbol in SYMBOLS:
+		backfill_ohlcv_cache(symbol, TIMEFRAME, start_date)
+		# Also backfill common HTF timeframes
+		for htf in ["4h", "6h", "8h", "12h"]:
+			backfill_ohlcv_cache(symbol, htf, start_date)
 
 
 def _fetch_direct_ohlcv(symbol, timeframe, limit):
