@@ -41,8 +41,8 @@ SIMULATION_OPEN_POSITIONS_JSON = "paper_trading_actual_trades.json"
 SIMULATION_SUMMARY_HTML = os.path.join("report_html", "trading_summary.html")
 SIMULATION_SUMMARY_JSON = os.path.join("report_html", "trading_summary.json")
 BEST_PARAMS_CSV = st.OVERALL_PARAMS_CSV
-START_TOTAL_CAPITAL = 16_000.0
-MAX_OPEN_POSITIONS = 5
+START_TOTAL_CAPITAL = 6_000.0
+MAX_OPEN_POSITIONS = 8
 STAKE_DIVISOR = 8 # stake = current total_capital / STAKE_DIVISOR
 DEFAULT_DIRECTION_CAPITAL = 2_800.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)

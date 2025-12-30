@@ -62,7 +62,7 @@ def timeframe_to_minutes(tf_str: str) -> int:
 
 EXCHANGE_ID = "binance"
 TIMEFRAME = "1h"
-LOOKBACK = 1200
+LOOKBACK = 12000
 SYMBOLS = [
 	"BTC/EUR",
 	"ETH/EUR",
