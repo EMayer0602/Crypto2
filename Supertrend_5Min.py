@@ -324,21 +324,28 @@ def _load_csv_cache(symbol: str, timeframe: str) -> pd.DataFrame:
 
 
 def _save_csv_cache(df: pd.DataFrame, symbol: str, timeframe: str) -> None:
-	"""Save OHLCV data to CSV cache file. Only saves if new data is larger than existing."""
+	"""Save OHLCV data to CSV cache file. Merges with existing data to preserve history."""
 	if df.empty:
 		return
 	os.makedirs(OHLCV_CACHE_DIR, exist_ok=True)
 	cache_path = _get_cache_path(symbol, timeframe)
 
-	# Safety check: don't overwrite if existing cache is larger
+	# Merge with existing data to preserve history
 	if os.path.exists(cache_path):
 		try:
 			existing_df = pd.read_csv(cache_path)
-			if len(existing_df) > len(df):
-				print(f"[Cache] WARNING: Not overwriting {cache_path} - existing has {len(existing_df)} rows, new has {len(df)}")
-				return
-		except Exception:
-			pass
+			if "timestamp" in existing_df.columns:
+				existing_df["timestamp"] = pd.to_datetime(existing_df["timestamp"], utc=True)
+				existing_df = existing_df.set_index("timestamp")
+				existing_df.index = existing_df.index.tz_convert(BERLIN_TZ)
+				# Combine: keep all old data, add new data
+				combined = pd.concat([existing_df, df])
+				combined = combined[~combined.index.duplicated(keep="last")]
+				combined = combined.sort_index()
+				df = combined
+				print(f"[Cache] Merged: {len(existing_df)} existing + new = {len(df)} total bars")
+		except Exception as exc:
+			print(f"[Cache] Could not merge with existing: {exc}")
 
 	try:
 		df_save = df.copy()
