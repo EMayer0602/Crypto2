@@ -44,7 +44,7 @@ BEST_PARAMS_CSV = st.OVERALL_PARAMS_CSV
 START_TOTAL_CAPITAL = 16_000.0
 MAX_OPEN_POSITIONS = 8
 STAKE_DIVISOR = 8 # stake = current total_capital / STAKE_DIVISOR
-DEFAULT_DIRECTION_CAPITAL = 2_800.0
+DEFAULT_DIRECTION_CAPITAL = 2_000.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
 DEFAULT_FIXED_STAKE = None  # Use dynamic sizing unless explicitly overridden
