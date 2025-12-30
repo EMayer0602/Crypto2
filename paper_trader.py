@@ -1397,71 +1397,51 @@ def generate_summary_html(
     open_positions_df: pd.DataFrame,
     path: str,
 ) -> None:
+    # Calculate Long/Short statistics
+    pnl_col = "pnl" if not trades_df.empty and "pnl" in trades_df.columns else None
+
+    long_df = trades_df[trades_df["direction"].str.lower() == "long"] if not trades_df.empty and "direction" in trades_df.columns else pd.DataFrame()
+    short_df = trades_df[trades_df["direction"].str.lower() == "short"] if not trades_df.empty and "direction" in trades_df.columns else pd.DataFrame()
+
+    long_trades = len(long_df)
+    short_trades = len(short_df)
+    long_pnl = float(long_df[pnl_col].sum()) if pnl_col and not long_df.empty else 0.0
+    short_pnl = float(short_df[pnl_col].sum()) if pnl_col and not short_df.empty else 0.0
+    long_avg_pnl = long_pnl / long_trades if long_trades > 0 else 0.0
+    short_avg_pnl = short_pnl / short_trades if short_trades > 0 else 0.0
+    long_winners = int((long_df[pnl_col] > 0).sum()) if pnl_col and not long_df.empty else 0
+    short_winners = int((short_df[pnl_col] > 0).sum()) if pnl_col and not short_df.empty else 0
+    long_losers = int((long_df[pnl_col] <= 0).sum()) if pnl_col and not long_df.empty else 0
+    short_losers = int((short_df[pnl_col] <= 0).sum()) if pnl_col and not short_df.empty else 0
+    long_win_rate = (long_winners / long_trades * 100) if long_trades > 0 else 0.0
+    short_win_rate = (short_winners / short_trades * 100) if short_trades > 0 else 0.0
+
     html_parts = [
         "<html><head><meta charset='utf-8'>",
         "<title>Paper Trading Simulation Summary</title>",
         "<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:4px 8px;text-align:right;}th{text-align:center;background:#f0f0f0;}h1,h2,h3{margin-bottom:0;}</style>",
         "</head><body>",
         f"<h1>Simulation Summary {summary['start']} → {summary['end']}</h1>",
-        "<h2>Overall Statistics</h2>",
+        "<h2>Overall Summary</h2>",
         "<table>",
-        "<tr><th>Metric</th><th>Value</th></tr>",
-        f"<tr><td style='text-align:left'>Closed trades</td><td>{summary['closed_trades']}</td></tr>",
-        f"<tr><td style='text-align:left'>Open positions</td><td>{summary['open_positions']}</td></tr>",
-        f"<tr><td style='text-align:left'>Closed PnL (USDT)</td><td>{summary['closed_pnl']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Avg trade PnL (USDT)</td><td>{summary['avg_trade_pnl']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Win rate (%)</td><td>{summary['win_rate_pct']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Winners</td><td>{summary['winners']}</td></tr>",
-        f"<tr><td style='text-align:left'>Losers</td><td>{summary['losers']}</td></tr>",
-        f"<tr><td style='text-align:left'>Open equity (net)</td><td>{summary['open_equity']:.2f}</td></tr>",
-        f"<tr><td style='text-align:left'>Final capital (USDT)</td><td>{summary['final_capital']:.2f}</td></tr>",
+        "<tr><th>Metric</th><th>Total</th><th>Long</th><th>Short</th></tr>",
+        f"<tr><td style='text-align:left'>Closed trades</td><td>{summary['closed_trades']}</td><td>{long_trades}</td><td>{short_trades}</td></tr>",
+        f"<tr><td style='text-align:left'>Closed PnL (USDT)</td><td>{summary['closed_pnl']:.2f}</td><td>{long_pnl:.2f}</td><td>{short_pnl:.2f}</td></tr>",
+        f"<tr><td style='text-align:left'>Avg trade PnL (USDT)</td><td>{summary['avg_trade_pnl']:.2f}</td><td>{long_avg_pnl:.2f}</td><td>{short_avg_pnl:.2f}</td></tr>",
+        f"<tr><td style='text-align:left'>Win rate (%)</td><td>{summary['win_rate_pct']:.2f}</td><td>{long_win_rate:.2f}</td><td>{short_win_rate:.2f}</td></tr>",
+        f"<tr><td style='text-align:left'>Winners</td><td>{summary['winners']}</td><td>{long_winners}</td><td>{short_winners}</td></tr>",
+        f"<tr><td style='text-align:left'>Losers</td><td>{summary['losers']}</td><td>{long_losers}</td><td>{short_losers}</td></tr>",
+        f"<tr><td style='text-align:left'>Open positions</td><td>{summary['open_positions']}</td><td></td><td></td></tr>",
+        f"<tr><td style='text-align:left'>Open equity (net)</td><td>{summary['open_equity']:.2f}</td><td></td><td></td></tr>",
+        f"<tr><td style='text-align:left'>Final capital (USDT)</td><td>{summary['final_capital']:.2f}</td><td></td><td></td></tr>",
         "</table>",
     ]
-
-    # Statistics by Direction
-    if not trades_df.empty and "direction" in trades_df.columns:
-        html_parts.append("<h2>Statistics by Direction</h2>")
-        pnl_col = "pnl" if "pnl" in trades_df.columns else None
-
-        for direction in ["long", "short"]:
-            dir_df = trades_df[trades_df["direction"].str.lower() == direction]
-            if dir_df.empty:
-                continue
-
-            dir_trades = len(dir_df)
-            dir_pnl = float(dir_df[pnl_col].sum()) if pnl_col else 0.0
-            dir_avg_pnl = dir_pnl / dir_trades if dir_trades > 0 else 0.0
-            dir_winners = int((dir_df[pnl_col] > 0).sum()) if pnl_col else 0
-            dir_losers = int((dir_df[pnl_col] <= 0).sum()) if pnl_col else 0
-            dir_win_rate = (dir_winners / dir_trades * 100) if dir_trades > 0 else 0.0
-
-            # Count open positions for this direction
-            dir_open = 0
-            dir_open_equity = 0.0
-            if not open_positions_df.empty and "direction" in open_positions_df.columns:
-                open_dir = open_positions_df[open_positions_df["direction"].str.lower() == direction]
-                dir_open = len(open_dir)
-                if "unrealized_pnl" in open_dir.columns:
-                    dir_open_equity = float(open_dir["unrealized_pnl"].sum())
-
-            html_parts.append(f"<h3>{direction.capitalize()} Statistics</h3>")
-            html_parts.append("<table>")
-            html_parts.append(f"<tr><td style='text-align:left'>Closed trades</td><td>{dir_trades}</td></tr>")
-            html_parts.append(f"<tr><td style='text-align:left'>PnL (USDT)</td><td>{dir_pnl:.2f}</td></tr>")
-            html_parts.append(f"<tr><td style='text-align:left'>Avg PnL (USDT)</td><td>{dir_avg_pnl:.2f}</td></tr>")
-            html_parts.append(f"<tr><td style='text-align:left'>Win rate (%)</td><td>{dir_win_rate:.2f}</td></tr>")
-            html_parts.append(f"<tr><td style='text-align:left'>Winners</td><td>{dir_winners}</td></tr>")
-            html_parts.append(f"<tr><td style='text-align:left'>Losers</td><td>{dir_losers}</td></tr>")
-            html_parts.append(f"<tr><td style='text-align:left'>Open positions</td><td>{dir_open}</td></tr>")
-            html_parts.append(f"<tr><td style='text-align:left'>Open equity (USDT)</td><td>{dir_open_equity:.2f}</td></tr>")
-            html_parts.append("</table>")
 
     # Statistics by Symbol
     if not trades_df.empty and "symbol" in trades_df.columns:
         html_parts.append("<h2>Statistics by Symbol</h2>")
         html_parts.append("<table>")
         html_parts.append("<tr><th>Symbol</th><th>Trades</th><th>Win</th><th>Loss</th><th>Win%</th><th>Total PnL</th><th>Avg PnL</th><th>Long</th><th>Short</th><th>Long PnL</th><th>Short PnL</th></tr>")
-        pnl_col = "pnl" if "pnl" in trades_df.columns else None
         for symbol in sorted(trades_df["symbol"].unique()):
             sym_df = trades_df[trades_df["symbol"] == symbol]
             sym_trades = len(sym_df)
@@ -1471,13 +1451,13 @@ def generate_summary_html(
             sym_losers = int((sym_df[pnl_col] <= 0).sum()) if pnl_col else 0
             sym_win_rate = (sym_winners / sym_trades * 100) if sym_trades > 0 else 0.0
             # Long/Short breakdown
-            long_df = sym_df[sym_df["direction"].str.lower() == "long"] if "direction" in sym_df.columns else pd.DataFrame()
-            short_df = sym_df[sym_df["direction"].str.lower() == "short"] if "direction" in sym_df.columns else pd.DataFrame()
-            long_count = len(long_df)
-            short_count = len(short_df)
-            long_pnl = float(long_df[pnl_col].sum()) if pnl_col and not long_df.empty else 0.0
-            short_pnl = float(short_df[pnl_col].sum()) if pnl_col and not short_df.empty else 0.0
-            html_parts.append(f"<tr><td style='text-align:left'>{symbol}</td><td>{sym_trades}</td><td>{sym_winners}</td><td>{sym_losers}</td><td>{sym_win_rate:.1f}%</td><td>{sym_pnl:.2f}</td><td>{sym_avg_pnl:.2f}</td><td>{long_count}</td><td>{short_count}</td><td>{long_pnl:.2f}</td><td>{short_pnl:.2f}</td></tr>")
+            sym_long_df = sym_df[sym_df["direction"].str.lower() == "long"] if "direction" in sym_df.columns else pd.DataFrame()
+            sym_short_df = sym_df[sym_df["direction"].str.lower() == "short"] if "direction" in sym_df.columns else pd.DataFrame()
+            sym_long_count = len(sym_long_df)
+            sym_short_count = len(sym_short_df)
+            sym_long_pnl = float(sym_long_df[pnl_col].sum()) if pnl_col and not sym_long_df.empty else 0.0
+            sym_short_pnl = float(sym_short_df[pnl_col].sum()) if pnl_col and not sym_short_df.empty else 0.0
+            html_parts.append(f"<tr><td style='text-align:left'>{symbol}</td><td>{sym_trades}</td><td>{sym_winners}</td><td>{sym_losers}</td><td>{sym_win_rate:.1f}%</td><td>{sym_pnl:.2f}</td><td>{sym_avg_pnl:.2f}</td><td>{sym_long_count}</td><td>{sym_short_count}</td><td>{sym_long_pnl:.2f}</td><td>{sym_short_pnl:.2f}</td></tr>")
         html_parts.append("</table>")
 
     # Separate Long and Short trades tables
