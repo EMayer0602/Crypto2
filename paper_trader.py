@@ -22,7 +22,45 @@ import plotly.graph_objects as go
 
 import numpy as np
 import pandas as pd
-from ta.volatility import AverageTrueRange
+
+# Eigene ATR-Implementierung (ersetzt ta.volatility.AverageTrueRange)
+class AverageTrueRange:
+    """Berechne Average True Range (ATR)."""
+    def __init__(self, high, low, close, window=14):
+        self.high = high
+        self.low = low
+        self.close = close
+        self.window = window
+        self._atr = self._calculate()
+
+    def _calculate(self):
+        high = self.high.values
+        low = self.low.values
+        close = self.close.values
+        n = len(close)
+
+        tr = np.zeros(n)
+        tr[0] = high[0] - low[0]
+
+        for i in range(1, n):
+            hl = high[i] - low[i]
+            hc = abs(high[i] - close[i-1])
+            lc = abs(low[i] - close[i-1])
+            tr[i] = max(hl, hc, lc)
+
+        # Exponential Moving Average of True Range
+        atr = np.zeros(n)
+        atr[:self.window] = np.nan
+        if n >= self.window:
+            atr[self.window-1] = np.mean(tr[:self.window])
+            multiplier = 2.0 / (self.window + 1)
+            for i in range(self.window, n):
+                atr[i] = (tr[i] * multiplier) + (atr[i-1] * (1 - multiplier))
+
+        return pd.Series(atr, index=self.high.index)
+
+    def average_true_range(self):
+        return self._atr
 
 try:
     from twilio.rest import Client as TwilioClient # pyright: ignore[reportMissingImports]
@@ -1588,7 +1626,6 @@ def generate_trade_charts(trades_df: pd.DataFrame, open_positions_df: pd.DataFra
                 atr_series = df["atr"]
             elif all(c in df.columns for c in ["high", "low", "close"]):
                 try:
-                    from ta.volatility import AverageTrueRange
                     atr_series = AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
                 except Exception:
                     pass
