@@ -43,7 +43,7 @@ SIMULATION_SUMMARY_JSON = os.path.join("report_html", "trading_summary.json")
 BEST_PARAMS_CSV = st.OVERALL_PARAMS_CSV
 START_TOTAL_CAPITAL = 16_000.0
 MAX_OPEN_POSITIONS = 5
-STAKE_DIVISOR = 8 # stake = current total_capital / STAKE_DIVISOR
+STAKE_DIVISOR = 5  # stake = current total_capital / STAKE_DIVISOR (~3200 per trade)
 DEFAULT_DIRECTION_CAPITAL = 2_800.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
@@ -683,9 +683,12 @@ def build_strategy_context(row: pd.Series, default_max_hold_bars: int = 0) -> St
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
     min_hold_bars = int(min_hold_days * st.BARS_PER_DAY)
-    # Time-based exit: use CSV value directly (already in base 1h bars from Supertrend_5Min.py sweep)
+    # Time-based exit: CSV value is in HTF bars, must convert to base (1h) bars
     csv_max_hold = parse_float(row.get("MaxHoldBars"))
-    max_hold_bars = int(csv_max_hold) if csv_max_hold is not None else default_max_hold_bars
+    htf_minutes = st.timeframe_to_minutes(htf_value)
+    base_minutes = st.timeframe_to_minutes(st.TIMEFRAME)
+    htf_multiplier = htf_minutes // base_minutes if base_minutes > 0 else 1
+    max_hold_bars = int(csv_max_hold * htf_multiplier) if csv_max_hold is not None else default_max_hold_bars
     return StrategyContext(
         symbol=symbol,
         direction=direction,

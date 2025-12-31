@@ -47,7 +47,7 @@ ENABLE_SHORTS = True
 # CAPITAL
 # ============================================================================
 START_EQUITY = 16000.0
-STAKE_DIVISOR = 8
+STAKE_DIVISOR = 5  # ~3200 per trade to match Crypto2Profitable stakes
 FEE_RATE = 0.001
 
 # ============================================================================
