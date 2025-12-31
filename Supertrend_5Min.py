@@ -710,7 +710,12 @@ def ensure_ohlcv_cache(symbol, timeframe, start_date=None):
 		need_update = True
 
 	if need_update:
-		cached = _fetch_and_cache_ohlcv(symbol, timeframe, start_date)
+		# Prüfe CACHE_ONLY Flag
+		cache_only = globals().get('CACHE_ONLY', False)
+		if cache_only:
+			print(f"[Cache] CACHE_ONLY: Überspringe API-Update für {symbol} {timeframe}")
+		else:
+			cached = _fetch_and_cache_ohlcv(symbol, timeframe, start_date)
 
 	if cached is None or cached.empty:
 		return None
@@ -897,42 +902,54 @@ def fetch_data(symbol, timeframe, limit):
 		base_df = DATA_CACHE[key]
 	else:
 		cache_df = None
-		exchange = get_data_exchange()
-		supported_timeframes = getattr(exchange, "timeframes", {}) or {}
-		if timeframe in supported_timeframes:
-			# Binance limitiert auf ~1000 Bars pro Request
-			# Bei größerem limit verwende paginierte Funktion
-			if limit > 900:
-				tf_minutes = timeframe_to_minutes(timeframe)
-				# Berechne Startdatum basierend auf limit
-				now = pd.Timestamp.now(BERLIN_TZ)
-				start_date = now - pd.Timedelta(minutes=tf_minutes * limit)
-				cache_df = _fetch_historical_ohlcv(symbol, timeframe, start_date, now)
-				if cache_df is not None and not cache_df.empty:
-					cache_df = cache_df.tail(limit)
+		cache_only = globals().get('CACHE_ONLY', False)
+
+		# Bei CACHE_ONLY: Nur aus Cache-Dateien laden (kein API)
+		if cache_only:
+			cache_df = _load_ohlcv_from_cache(symbol, timeframe)
+			if cache_df is not None and not isinstance(cache_df, str) and not cache_df.empty:
+				cache_df = cache_df.tail(limit)
 			else:
-				cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
+				print(f"[Cache] CACHE_ONLY: Keine Cache-Daten für {symbol} {timeframe}")
+				cache_df = pd.DataFrame()
 		else:
-			target_minutes = timeframe_to_minutes(timeframe)
-			base_minutes = timeframe_to_minutes(TIMEFRAME)
-			if target_minutes < base_minutes or target_minutes % base_minutes != 0:
-				raise ValueError(f"Cannot synthesize timeframe {timeframe} from base {TIMEFRAME}")
-			factor = target_minutes // base_minutes
-			base_limit = limit * factor + 10
-			base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
-			if base_df_source.empty:
-				cache_df = base_df_source
+			# Normale API-basierte Logik
+			exchange = get_data_exchange()
+			supported_timeframes = getattr(exchange, "timeframes", {}) or {}
+			if timeframe in supported_timeframes:
+				# Binance limitiert auf ~1000 Bars pro Request
+				# Bei größerem limit verwende paginierte Funktion
+				if limit > 900:
+					tf_minutes = timeframe_to_minutes(timeframe)
+					# Berechne Startdatum basierend auf limit
+					now = pd.Timestamp.now(BERLIN_TZ)
+					start_date = now - pd.Timedelta(minutes=tf_minutes * limit)
+					cache_df = _fetch_historical_ohlcv(symbol, timeframe, start_date, now)
+					if cache_df is not None and not cache_df.empty:
+						cache_df = cache_df.tail(limit)
+				else:
+					cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
 			else:
-				agg_rule = f"{target_minutes}min"
-				synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
-					"open": "first",
-					"high": "max",
-					"low": "min",
-					"close": "last",
-					"volume": "sum",
-				})
-				synth = synth.dropna(subset=["open", "high", "low", "close"])
-				cache_df = synth.tail(limit)
+				target_minutes = timeframe_to_minutes(timeframe)
+				base_minutes = timeframe_to_minutes(TIMEFRAME)
+				if target_minutes < base_minutes or target_minutes % base_minutes != 0:
+					raise ValueError(f"Cannot synthesize timeframe {timeframe} from base {TIMEFRAME}")
+				factor = target_minutes // base_minutes
+				base_limit = limit * factor + 10
+				base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
+				if base_df_source.empty:
+					cache_df = base_df_source
+				else:
+					agg_rule = f"{target_minutes}min"
+					synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
+						"open": "first",
+						"high": "max",
+						"low": "min",
+						"close": "last",
+						"volume": "sum",
+					})
+					synth = synth.dropna(subset=["open", "high", "low", "close"])
+					cache_df = synth.tail(limit)
 		DATA_CACHE[key] = cache_df
 		base_df = cache_df
 	df_copy = base_df.copy() if base_df is not None else pd.DataFrame()

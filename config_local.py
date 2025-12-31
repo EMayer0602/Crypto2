@@ -55,6 +55,7 @@ FEE_RATE = 0.001
 # ============================================================================
 LOOKBACK = 12000  # ~16 Monate bei 1h Timeframe
 OHLCV_CACHE_DIR = "ohlcv_cache"  # Verzeichnis mit CSV-Cache-Dateien
+CACHE_ONLY = True  # NUR Cache verwenden, keine Binance API-Calls
 
 # ============================================================================
 # PAPER TRADING
