@@ -103,6 +103,7 @@ TIMEFRAME = "1h"
 LOOKBACK = 720
 LOOKBACK_YEAR = 9000  # ~1 Jahr bei 1h Timeframe
 OHLCV_CACHE_DIR = "ohlcv_cache"  # Verzeichnis mit CSV-Cache-Dateien
+CACHE_ONLY = False  # NUR Cache verwenden, keine Binance API-Calls
 SYMBOLS = [
 	"BTC/EUR",
 	"ETH/EUR",
@@ -691,6 +692,13 @@ def ensure_ohlcv_cache(symbol, timeframe, start_date=None):
 		print(f"[Cache] ABBRUCH in ensure_ohlcv_cache: {symbol} {timeframe} wird NICHT überschrieben!")
 		return None
 
+	# Bei CACHE_ONLY: Nur existierende Cache-Daten verwenden, kein Netzwerkzugriff
+	if CACHE_ONLY:
+		if cached is not None and not cached.empty:
+			return cached
+		print(f"[Cache] CACHE_ONLY aktiv aber keine Daten für {symbol} {timeframe}")
+		return None
+
 	now = pd.Timestamp.now(BERLIN_TZ)
 	tf_minutes = timeframe_to_minutes(timeframe)
 	threshold = now - pd.Timedelta(minutes=tf_minutes * 2)  # Cache gilt als veraltet nach 2 Bars
@@ -897,45 +905,57 @@ def fetch_data(symbol, timeframe, limit):
 		base_df = DATA_CACHE[key]
 	else:
 		cache_df = None
-		exchange = get_data_exchange()
-		supported_timeframes = getattr(exchange, "timeframes", {}) or {}
-		if timeframe in supported_timeframes:
-			# Binance limitiert auf ~1000 Bars pro Request
-			# Bei größerem limit verwende paginierte Funktion
-			if limit > 900:
-				tf_minutes = timeframe_to_minutes(timeframe)
-				# Berechne Startdatum basierend auf limit
-				now = pd.Timestamp.now(BERLIN_TZ)
-				start_date = now - pd.Timedelta(minutes=tf_minutes * limit)
-				cache_df = _fetch_historical_ohlcv(symbol, timeframe, start_date, now)
-				if cache_df is not None and not cache_df.empty:
-					cache_df = cache_df.tail(limit)
+		# Bei CACHE_ONLY: Nur existierende Cache-Dateien verwenden
+		if CACHE_ONLY:
+			cache_df = _load_ohlcv_from_cache(symbol, timeframe)
+			if cache_df is not None and not cache_df.empty:
+				cache_df = cache_df.tail(limit)
 			else:
-				cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
+				print(f"[Cache] CACHE_ONLY: Keine Daten für {symbol} {timeframe}")
+				cache_df = pd.DataFrame()
 		else:
-			target_minutes = timeframe_to_minutes(timeframe)
-			base_minutes = timeframe_to_minutes(TIMEFRAME)
-			if target_minutes < base_minutes or target_minutes % base_minutes != 0:
-				raise ValueError(f"Cannot synthesize timeframe {timeframe} from base {TIMEFRAME}")
-			factor = target_minutes // base_minutes
-			base_limit = limit * factor + 10
-			base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
-			if base_df_source.empty:
-				cache_df = base_df_source
+			exchange = get_data_exchange()
+			supported_timeframes = getattr(exchange, "timeframes", {}) or {}
+			if timeframe in supported_timeframes:
+				# Binance limitiert auf ~1000 Bars pro Request
+				# Bei größerem limit verwende paginierte Funktion
+				if limit > 900:
+					tf_minutes = timeframe_to_minutes(timeframe)
+					# Berechne Startdatum basierend auf limit
+					now = pd.Timestamp.now(BERLIN_TZ)
+					start_date = now - pd.Timedelta(minutes=tf_minutes * limit)
+					cache_df = _fetch_historical_ohlcv(symbol, timeframe, start_date, now)
+					if cache_df is not None and not cache_df.empty:
+						cache_df = cache_df.tail(limit)
+				else:
+					cache_df = _fetch_direct_ohlcv(symbol, timeframe, limit)
 			else:
-				agg_rule = f"{target_minutes}min"
-				synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
-					"open": "first",
-					"high": "max",
-					"low": "min",
-					"close": "last",
-					"volume": "sum",
-				})
-				synth = synth.dropna(subset=["open", "high", "low", "close"])
-				cache_df = synth.tail(limit)
+				target_minutes = timeframe_to_minutes(timeframe)
+				base_minutes = timeframe_to_minutes(TIMEFRAME)
+				if target_minutes < base_minutes or target_minutes % base_minutes != 0:
+					raise ValueError(f"Cannot synthesize timeframe {timeframe} from base {TIMEFRAME}")
+				factor = target_minutes // base_minutes
+				base_limit = limit * factor + 10
+				base_df_source = fetch_data(symbol, TIMEFRAME, base_limit)
+				if base_df_source.empty:
+					cache_df = base_df_source
+				else:
+					agg_rule = f"{target_minutes}min"
+					synth = base_df_source.resample(agg_rule, label="right", closed="right").agg({
+						"open": "first",
+						"high": "max",
+						"low": "min",
+						"close": "last",
+						"volume": "sum",
+					})
+					synth = synth.dropna(subset=["open", "high", "low", "close"])
+					cache_df = synth.tail(limit)
 		DATA_CACHE[key] = cache_df
 		base_df = cache_df
 	df_copy = base_df.copy() if base_df is not None else pd.DataFrame()
+	# Bei CACHE_ONLY keinen Live-Bar hinzufügen
+	if CACHE_ONLY:
+		return df_copy
 	df_with_live = _maybe_append_synthetic_bar(df_copy, symbol, timeframe)
 	return df_with_live
 

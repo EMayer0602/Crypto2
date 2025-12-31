@@ -3,7 +3,7 @@
 # ============================================================================
 RUN_PARAMETER_SWEEP = False
 RUN_SAVED_PARAMS = False
-RUN_OVERALL_BEST = False
+RUN_OVERALL_BEST = True
 
 # NUR JMA und KAMA (beste Ergebnisse)
 ACTIVE_INDICATORS = ["jma", "kama"]
@@ -55,6 +55,7 @@ FEE_RATE = 0.001
 # ============================================================================
 LOOKBACK = 12000  # ~16 Monate bei 1h Timeframe
 OHLCV_CACHE_DIR = "ohlcv_cache"  # Verzeichnis mit CSV-Cache-Dateien
+CACHE_ONLY = True  # NUR Cache verwenden, keine Binance API-Calls (für Offline-Simulation)
 
 # ============================================================================
 # PAPER TRADING
