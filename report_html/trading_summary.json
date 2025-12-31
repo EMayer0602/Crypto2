@@ -1,14 +1,14 @@
 {
-  "generated_at": "2025-12-31T14:57:50.850051+00:00",
+  "generated_at": "2025-12-31T15:36:04.234950+00:00",
   "start": "2025-01-01T00:00:00+01:00",
   "end": "2025-12-31T00:00:00+01:00",
-  "closed_trades": 995,
+  "closed_trades": 2271,
   "open_positions": 5,
-  "closed_pnl": 2952.55376,
-  "avg_trade_pnl": 2.967391,
-  "win_rate_pct": 32.4623,
-  "winners": 323,
-  "losers": 672,
-  "open_equity": 32.705397,
-  "final_capital": 18985.259158
+  "closed_pnl": 1665.564403,
+  "avg_trade_pnl": 0.733406,
+  "win_rate_pct": 34.6984,
+  "winners": 788,
+  "losers": 1483,
+  "open_equity": 547.123818,
+  "final_capital": 18212.688221
 }
