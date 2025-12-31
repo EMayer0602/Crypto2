@@ -1,9 +1,9 @@
 # ============================================================================
 # SWEEP SETTINGS - FÜR SIMULATION DEAKTIVIERT
 # ============================================================================
-RUN_PARAMETER_SWEEP = True
+RUN_PARAMETER_SWEEP = False
 RUN_SAVED_PARAMS = False
-RUN_OVERALL_BEST = False
+RUN_OVERALL_BEST = True
 
 # NUR JMA und KAMA (beste Ergebnisse)
 ACTIVE_INDICATORS = ["jma", "kama"]
