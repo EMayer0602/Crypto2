@@ -80,8 +80,8 @@ SIMULATION_SUMMARY_HTML = os.path.join("report_html", "trading_summary.html")
 SIMULATION_SUMMARY_JSON = os.path.join("report_html", "trading_summary.json")
 BEST_PARAMS_CSV = st.OVERALL_PARAMS_CSV
 START_TOTAL_CAPITAL = 16_000.0
-MAX_OPEN_POSITIONS = 8  # Realistic limit for live trading
-STAKE_DIVISOR = 5  # stake = current total_capital / STAKE_DIVISOR (~3200 per trade)
+MAX_OPEN_POSITIONS = 5
+STAKE_DIVISOR = 8 # stake = current total_capital / STAKE_DIVISOR
 DEFAULT_DIRECTION_CAPITAL = 2_800.0
 BASE_BAR_MINUTES = st.timeframe_to_minutes(st.TIMEFRAME)
 DEFAULT_SYMBOL_ALLOWLIST = [sym.strip() for sym in st.SYMBOLS if sym and sym.strip()]
@@ -480,15 +480,9 @@ def filter_best_rows_by_direction(df: pd.DataFrame, allowed: Optional[List[str]]
 def select_best_indicator_per_symbol(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "Symbol" not in df.columns or "FinalEquity" not in df.columns:
         return df
-    # Keep all rows with unique Symbol+Direction+Indicator+HTF combinations
-    # This allows running multiple strategies for the same symbol
     group_cols = ["Symbol"]
     if "Direction" in df.columns:
         group_cols.append("Direction")
-    if "Indicator" in df.columns:
-        group_cols.append("Indicator")
-    if "HTF" in df.columns:
-        group_cols.append("HTF")
     sorted_df = df.sort_values("FinalEquity", ascending=False)
     reduced_df = sorted_df.drop_duplicates(subset=group_cols, keep="first")
     return reduced_df.reset_index(drop=True)
@@ -727,12 +721,9 @@ def build_strategy_context(row: pd.Series, default_max_hold_bars: int = 0) -> St
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
     min_hold_bars = int(min_hold_days * st.BARS_PER_DAY)
-    # Time-based exit: CSV value is in HTF bars, must convert to base (1h) bars
+    # Time-based exit: use CSV value if present (including 0!), otherwise use default
     csv_max_hold = parse_float(row.get("MaxHoldBars"))
-    htf_minutes = st.timeframe_to_minutes(htf_value)
-    base_minutes = st.timeframe_to_minutes(st.TIMEFRAME)
-    htf_multiplier = htf_minutes // base_minutes if base_minutes > 0 else 1
-    max_hold_bars = int(csv_max_hold * htf_multiplier) if csv_max_hold is not None else default_max_hold_bars
+    max_hold_bars = int(csv_max_hold) if csv_max_hold is not None else default_max_hold_bars
     return StrategyContext(
         symbol=symbol,
         direction=direction,
