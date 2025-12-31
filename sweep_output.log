@@ -1057,3 +1057,138 @@
     309/360 | Length=50, Phase=0, ATR=1.5, Hold=0d, Exit=5b, long -> PnL: -245.12
     310/360 | Length=50, Phase=0, ATR=1.5, Hold=0d, Exit=5b, short -> PnL: -282.37
     311/360 | Length=50, Phase=0, ATR=1.5, Hold=2d, Exit=trend, long -> PnL: -328.11
+[Config] Lokale Konfiguration aus config_local.py geladen
+[Init] OHLCV Cache geleert - hole frische Daten von binance
+
+================================================================================
+[Indicator] Starte Jurik Moving Average - Cache geleert
+[Config] USE_MIN_HOLD_FILTER=True, MIN_HOLD_DAY_VALUES=[0, 2]
+[Config] USE_HIGHER_TIMEFRAME_FILTER=True
+================================================================================
+
+[Run] Indicator=Jurik Moving Average, HTF=4h, MinHoldDays=[0, 2], ATRMults=[None, 1.5]
+
+  [1/9] BTC/EUR
+[Warn] Failed to fetch 1m data for BTC/EUR: binance GET https://api.binance.com/api/v3/exchangeInfo
+[Warn] Failed to fetch 1m data for BTC/EUR: binance GET https://api.binance.com/api/v3/exchangeInfo
+    [Debug] HTF Trend Verteilung: {0: 10008, -1: 1033, 1: 959}
+    [Debug] trend_flag Verteilung: {1: 6201, -1: 5799}, Trend-Flips: 3551
+    1/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=trend, long -> PnL: -715.78
+    2/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=trend, short -> PnL: -404.29
+    3/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=2b, long -> PnL: -715.91
+    4/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=2b, short -> PnL: -543.21
+    5/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=3b, long -> PnL: -711.92
+    6/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=3b, short -> PnL: -468.35
+    7/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=4b, long -> PnL: -697.73
+    8/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=4b, short -> PnL: -441.58
+    9/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=5b, long -> PnL: -664.14
+    10/360 | Length=20, Phase=-50, ATR=None, Hold=0d, Exit=5b, short -> PnL: -381.54
+    11/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=trend, long -> PnL: -665.62
+    12/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=trend, short -> PnL: +770.24
+    13/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=2b, long -> PnL: -713.60
+    14/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=2b, short -> PnL: -582.27
+    15/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=3b, long -> PnL: -794.90
+    16/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=3b, short -> PnL: -515.61
+    17/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=4b, long -> PnL: -551.82
+    18/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=4b, short -> PnL: -476.78
+    19/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=5b, long -> PnL: -408.38
+    20/360 | Length=20, Phase=-50, ATR=None, Hold=2d, Exit=5b, short -> PnL: -327.96
+    21/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=trend, long -> PnL: -634.19
+    22/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=trend, short -> PnL: -303.05
+    23/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=2b, long -> PnL: -642.37
+    24/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=2b, short -> PnL: -440.48
+    25/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=3b, long -> PnL: -630.31
+    26/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=3b, short -> PnL: -367.52
+    27/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=4b, long -> PnL: -616.05
+    28/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=4b, short -> PnL: -340.58
+    29/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=5b, long -> PnL: -582.28
+    30/360 | Length=20, Phase=-50, ATR=1.5, Hold=0d, Exit=5b, short -> PnL: -280.15
+    31/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=trend, long -> PnL: -294.68
+    32/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=trend, short -> PnL: +21.19
+    33/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=2b, long -> PnL: -631.54
+    34/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=2b, short -> PnL: -430.23
+    35/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=3b, long -> PnL: -647.21
+    36/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=3b, short -> PnL: -294.74
+    37/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=4b, long -> PnL: -455.17
+    38/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=4b, short -> PnL: -283.85
+    39/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=5b, long -> PnL: -332.21
+    40/360 | Length=20, Phase=-50, ATR=1.5, Hold=2d, Exit=5b, short -> PnL: -90.77
+    41/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=trend, long -> PnL: -704.88
+    42/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=trend, short -> PnL: -475.50
+    43/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=2b, long -> PnL: -600.57
+    44/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=2b, short -> PnL: -634.27
+    45/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=3b, long -> PnL: -630.25
+    46/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=3b, short -> PnL: -479.83
+    47/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=4b, long -> PnL: -655.42
+    48/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=4b, short -> PnL: -460.65
+    49/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=5b, long -> PnL: -668.28
+    50/360 | Length=20, Phase=0, ATR=None, Hold=0d, Exit=5b, short -> PnL: -467.18
+    51/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=trend, long -> PnL: -575.89
+    52/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=trend, short -> PnL: +704.60
+    53/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=2b, long -> PnL: -594.90
+    54/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=2b, short -> PnL: -728.12
+    55/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=3b, long -> PnL: -693.96
+    56/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=3b, short -> PnL: -666.62
+    57/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=4b, long -> PnL: -593.98
+    58/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=4b, short -> PnL: -565.04
+    59/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=5b, long -> PnL: -476.74
+    60/360 | Length=20, Phase=0, ATR=None, Hold=2d, Exit=5b, short -> PnL: -371.74
+    61/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=trend, long -> PnL: -613.24
+    62/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=trend, short -> PnL: -372.32
+    63/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=2b, long -> PnL: -516.41
+    64/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=2b, short -> PnL: -532.15
+    65/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=3b, long -> PnL: -538.16
+    66/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=3b, short -> PnL: -376.68
+    67/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=4b, long -> PnL: -563.48
+    68/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=4b, short -> PnL: -357.37
+    69/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=5b, long -> PnL: -576.41
+    70/360 | Length=20, Phase=0, ATR=1.5, Hold=0d, Exit=5b, short -> PnL: -363.94
+    71/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=trend, long -> PnL: -234.93
+    72/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=trend, short -> PnL: +85.07
+    73/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=2b, long -> PnL: -504.53
+    74/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=2b, short -> PnL: -553.58
+    75/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=3b, long -> PnL: -556.60
+    76/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=3b, short -> PnL: -407.57
+    77/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=4b, long -> PnL: -471.83
+    78/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=4b, short -> PnL: -330.49
+    79/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=5b, long -> PnL: -337.64
+    80/360 | Length=20, Phase=0, ATR=1.5, Hold=2d, Exit=5b, short -> PnL: -198.31
+    81/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=trend, long -> PnL: -630.25
+    82/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=trend, short -> PnL: -425.76
+    83/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=2b, long -> PnL: -519.21
+    84/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=2b, short -> PnL: -572.16
+    85/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=3b, long -> PnL: -564.34
+    86/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=3b, short -> PnL: -424.92
+    87/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=4b, long -> PnL: -577.42
+    88/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=4b, short -> PnL: -399.91
+    89/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=5b, long -> PnL: -600.69
+    90/360 | Length=20, Phase=50, ATR=None, Hold=0d, Exit=5b, short -> PnL: -409.61
+    91/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=trend, long -> PnL: -560.94
+    92/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=trend, short -> PnL: +686.71
+    93/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=2b, long -> PnL: -510.41
+    94/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=2b, short -> PnL: -697.37
+    95/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=3b, long -> PnL: -645.78
+    96/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=3b, short -> PnL: -610.77
+    97/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=4b, long -> PnL: -569.65
+    98/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=4b, short -> PnL: -541.11
+    99/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=5b, long -> PnL: -498.61
+    100/360 | Length=20, Phase=50, ATR=None, Hold=2d, Exit=5b, short -> PnL: -443.19
+    101/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=trend, long -> PnL: -531.81
+    102/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=trend, short -> PnL: -322.25
+    103/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=2b, long -> PnL: -447.00
+    104/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=2b, short -> PnL: -469.62
+    105/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=3b, long -> PnL: -465.47
+    106/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=3b, short -> PnL: -321.40
+    107/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=4b, long -> PnL: -478.64
+    108/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=4b, short -> PnL: -296.23
+    109/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=5b, long -> PnL: -502.05
+    110/360 | Length=20, Phase=50, ATR=1.5, Hold=0d, Exit=5b, short -> PnL: -305.99
+    111/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=trend, long -> PnL: -218.45
+    112/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=trend, short -> PnL: +141.34
+    113/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=2b, long -> PnL: -433.21
+    114/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=2b, short -> PnL: -535.66
+    115/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=3b, long -> PnL: -527.26
+    116/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=3b, short -> PnL: -422.97
+    117/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=4b, long -> PnL: -418.37
+    118/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=4b, short -> PnL: -343.48
+    119/360 | Length=20, Phase=50, ATR=1.5, Hold=2d, Exit=5b, long -> PnL: -327.79
