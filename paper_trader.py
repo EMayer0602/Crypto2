@@ -683,7 +683,7 @@ def build_strategy_context(row: pd.Series, default_max_hold_bars: int = 0) -> St
     atr_mult = parse_float(row.get("ATRStopMultValue", row.get("ATRStopMult")))
     min_hold_days = int(parse_float(row.get("MinHoldDays")) or 0)
     min_hold_bars = int(min_hold_days * st.BARS_PER_DAY)
-    # Time-based exit: use CSV value if present (including 0!), otherwise use default
+    # Time-based exit: use CSV value directly (already in base 1h bars from Supertrend_5Min.py sweep)
     csv_max_hold = parse_float(row.get("MaxHoldBars"))
     max_hold_bars = int(csv_max_hold) if csv_max_hold is not None else default_max_hold_bars
     return StrategyContext(

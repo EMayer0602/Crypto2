@@ -2008,6 +2008,12 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 		else:
 			hold_days = int(hold_days)
 		min_hold_bars = hold_days * BARS_PER_DAY
+		# Time-based exit: MaxHoldBars aus CSV lesen
+		max_hold_bars_raw = row.get("MaxHoldBars", DEFAULT_TIME_EXIT_BARS)
+		if pd.isna(max_hold_bars_raw):
+			max_hold_bars = DEFAULT_TIME_EXIT_BARS
+		else:
+			max_hold_bars = int(max_hold_bars_raw)
 		if symbol not in data_cache:
 			data_cache[symbol] = prepare_symbol_dataframe(symbol)
 		df_raw = data_cache[symbol]
@@ -2025,11 +2031,13 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 			direction=direction,
 			min_hold_bars=min_hold_bars,
 			min_hold_days=hold_days,
+			max_hold_bars=max_hold_bars,
 		)
 		direction_title = direction.capitalize()
 		atr_label = "None" if atr_mult is None else atr_mult
 		param_desc = f"{PARAM_A_LABEL}={param_a}, {PARAM_B_LABEL}={param_b}"
-		print(f"  · {symbol} {direction_title} ({param_desc}, ATR={atr_label}, MinHold={hold_days}d)")
+		time_exit_str = f"Exit={max_hold_bars}b" if max_hold_bars > 0 else "Exit=trend"
+		print(f"  · {symbol} {direction_title} ({param_desc}, ATR={atr_label}, MinHold={hold_days}d, {time_exit_str})")
 		stats = performance_report(
 			trades,
 			symbol,
@@ -2039,12 +2047,15 @@ def _run_saved_rows(rows_df, table_title, save_path=None, aggregate_sections=Non
 			hold_days,
 		)
 		updated_row = dict(row_dict)
+		time_exit_label = f"{max_hold_bars}b" if max_hold_bars > 0 else "trend"
 		updated_row.update({
 			"ParamA": param_a,
 			"ParamB": param_b,
 			PARAM_A_LABEL: param_a,
 			PARAM_B_LABEL: param_b,
 			"MinHoldDays": hold_days,
+			"MaxHoldBars": max_hold_bars,
+			"TimeExit": time_exit_label,
 			"ATRStopMult": atr_label,
 			"ATRStopMultValue": atr_mult,
 			"HTF": HIGHER_TIMEFRAME,
