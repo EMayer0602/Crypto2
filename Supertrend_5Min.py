@@ -302,6 +302,18 @@ def _fetch_direct_ohlcv(symbol, timeframe, limit):
 
 
 def _maybe_append_synthetic_bar(df, symbol, timeframe):
+	"""
+	Append a synthetic bar for the current incomplete period using 1m data.
+
+	TIMING FIX: Bar is indexed at current_start (beginning of period), not current_end.
+	This allows signals to be calculated DURING the bar, not after it closes.
+
+	OHLC calculation from 1m bars since last full hour:
+	- Open  = First 1m bar's open after last full hour
+	- High  = Max of all highs since last full hour
+	- Low   = Min of all lows since last full hour
+	- Close = Current price (latest 1m bar close)
+	"""
 	try:
 		tf_minutes = timeframe_to_minutes(timeframe)
 	except ValueError:
@@ -310,32 +322,44 @@ def _maybe_append_synthetic_bar(df, symbol, timeframe):
 		return df
 	if df is None:
 		df = pd.DataFrame(columns=["open", "high", "low", "close", "volume"], dtype=float)
+
 	now = pd.Timestamp.now(BERLIN_TZ)
 	bucket = pd.Timedelta(minutes=tf_minutes)
-	current_end = now.floor(f"{tf_minutes}min") + bucket
+	# current_start = beginning of current period (e.g., 10:00 for 10:xx)
+	current_start = now.floor(f"{tf_minutes}min")
+
+	# Remove any existing synthetic bar for current period
 	if not df.empty:
 		last_idx = df.index.max()
-		if last_idx > current_end:
+		# If last bar is beyond current period, data is stale - return as-is
+		if last_idx > current_start:
 			return df
-		if last_idx == current_end:
-			df = df.drop(index=current_end)
-	current_start = current_end - bucket
+		# If we already have a synthetic bar for this period, remove it to recalculate
+		if last_idx == current_start:
+			df = df.drop(index=current_start)
+
+	# Fetch 1m bars to build synthetic OHLC
 	minutes_needed = max(2, int(np.ceil((now - current_start).total_seconds() / 60.0)) + 2)
 	try:
 		minute_df = _fetch_direct_ohlcv(symbol, "1m", limit=minutes_needed)
 	except Exception as exc:
 		print(f"[Warn] Failed to fetch 1m data for {symbol}: {exc}")
 		return df
+
+	# Slice 1m bars from current_start to now
 	slice_df = minute_df[(minute_df.index > current_start) & (minute_df.index <= now)]
 	if slice_df.empty:
 		return df
+
+	# Build synthetic bar indexed at current_start (signals calculated DURING bar)
 	synthetic = pd.DataFrame({
-		"open": float(slice_df["open"].iloc[0]),
-		"high": float(slice_df["high"].max()),
-		"low": float(slice_df["low"].min()),
-		"close": float(slice_df["close"].iloc[-1]),
+		"open": float(slice_df["open"].iloc[0]),      # First 1m bar's open
+		"high": float(slice_df["high"].max()),        # Max of all highs
+		"low": float(slice_df["low"].min()),          # Min of all lows
+		"close": float(slice_df["close"].iloc[-1]),   # Current price
 		"volume": float(slice_df["volume"].sum()),
-	}, index=[current_end])
+	}, index=[current_start])  # KEY FIX: index at START, not END
+
 	combined = pd.concat([df, synthetic])
 	combined = combined[~combined.index.duplicated(keep="last")]
 	combined = combined.sort_index()
