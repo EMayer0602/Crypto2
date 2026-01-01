@@ -1,8 +1,8 @@
 Symbol;Direction;Indicator;IndicatorDisplay;ParamA;ParamB;Length;Phase;Factor;ATRStopMult;ATRStopMultValue;MinHoldDays;MaxHoldBars;TimeExit;HTF;FinalEquity;Trades;WinRate;MaxDrawdown;SlowLength;AvgPnL;ProfitFactor;TradesCSV
-BTC/EUR;Long;jma;Jurik Moving Average;30;0,0;30;0,0;;None;;2;5;5b;8h;;;;;;;;
-BTC/EUR;Short;jma;Jurik Moving Average;30;0,0;30;0,0;;None;;2;5;5b;8h;;;;;;;;
-ETH/EUR;Long;jma;Jurik Moving Average;30;0,0;30;0,0;;1.5;1,5;2;5;5b;12h;;;;;;;;
-ETH/EUR;Short;jma;Jurik Moving Average;30;0,0;30;0,0;;1.5;1,5;2;5;5b;12h;;;;;;;;
+BTC/EUR;Long;jma;Jurik Moving Average;30;0,0;30;0,0;;None;;2;5;5b;6h;;;;;;;;
+BTC/EUR;Short;jma;Jurik Moving Average;30;0,0;30;0,0;;None;;2;5;5b;6h;;;;;;;;
+ETH/EUR;Long;jma;Jurik Moving Average;30;0,0;30;0,0;;1.5;1,5;2;5;5b;6h;;;;;;;;
+ETH/EUR;Short;jma;Jurik Moving Average;30;0,0;30;0,0;;1.5;1,5;2;5;5b;6h;;;;;;;;
 LINK/EUR;Long;jma;Jurik Moving Average;30;0,0;30;0,0;;1.5;1,5;2;3;3b;1h;;;;;;;;
 LINK/EUR;Short;jma;Jurik Moving Average;30;0,0;30;0,0;;1.5;1,5;2;3;3b;1h;;;;;;;;
 LINK/EUR;Long;jma;Jurik Moving Average;30;0,0;30;0,0;;None;;2;2;2b;8h;;;;;;;;
